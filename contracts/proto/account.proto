@@ -1,0 +1,87 @@
+syntax = "proto3";
+
+package peikon.account.v1;
+
+option go_package = "github.com/peikonpurekkusu/contracts/gen/go/account/v1;accountv1";
+option csharp_namespace = "Peikon.Contracts.Account.V1";
+
+// AccountService is the synchronous money-decision API.
+// Every mutating RPC is idempotent, keyed by the caller-supplied request_id.
+// Money truth lives here (PostgreSQL ledger) — callers never decide from caches.
+service AccountService {
+  // Place a hold (two-phase pending transfer). Fails if available balance is
+  // insufficient. Idempotent on request_id.
+  rpc HoldFunds(HoldFundsRequest) returns (HoldFundsResponse);
+
+  // Capture a previously placed hold (posts final ledger entries).
+  rpc CaptureFunds(CaptureFundsRequest) returns (CaptureFundsResponse);
+
+  // Release a hold without capturing (compensation path).
+  rpc ReleaseFunds(ReleaseFundsRequest) returns (ReleaseFundsResponse);
+
+  // Authoritative balance read (from the ledger, not a cache).
+  rpc GetBalance(GetBalanceRequest) returns (GetBalanceResponse);
+}
+
+// Money is always integer minor units + ISO-4217 code. Interpretation of the
+// minor unit count is driven by the currency exponent (JPY=0, USD=2, BHD=3).
+message Money {
+  int64 minor_units = 1;
+  string currency_code = 2; // ISO-4217 alpha
+}
+
+message HoldFundsRequest {
+  string request_id = 1;    // caller idempotency key (uuid)
+  string account_id = 2;
+  string payment_id = 3;    // owning payment (also PSP reference)
+  Money amount = 4;
+  int64 expires_in_seconds = 5; // 0 → service default (7 days)
+}
+
+enum HoldStatus {
+  HOLD_STATUS_UNSPECIFIED = 0;
+  HOLD_STATUS_ACTIVE = 1;
+  HOLD_STATUS_CAPTURED = 2;
+  HOLD_STATUS_RELEASED = 3;
+  HOLD_STATUS_EXPIRED = 4;
+}
+
+message HoldFundsResponse {
+  string hold_id = 1;
+  HoldStatus status = 2;
+  Money available_after = 3;
+}
+
+message CaptureFundsRequest {
+  string request_id = 1;
+  string hold_id = 2;
+  // Amount to capture; must be <= held amount. Remainder is released
+  // (single-capture semantics, processor-style).
+  Money amount = 3;
+}
+
+message CaptureFundsResponse {
+  string ledger_transaction_id = 1;
+  HoldStatus status = 2;
+}
+
+message ReleaseFundsRequest {
+  string request_id = 1;
+  string hold_id = 2;
+  string reason = 3;
+}
+
+message ReleaseFundsResponse {
+  HoldStatus status = 1;
+}
+
+message GetBalanceRequest {
+  string account_id = 1;
+}
+
+message GetBalanceResponse {
+  string account_id = 1;
+  Money available = 2;
+  Money held = 3;
+  int64 version = 4; // optimistic concurrency version of the balance row
+}

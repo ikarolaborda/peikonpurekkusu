@@ -1,0 +1,49 @@
+# Traefik dynamic configuration — shared middlewares and TLS options.
+# Referenced by service labels as <name>@file.
+
+http:
+  middlewares:
+    # Standard security headers applied to every public router
+    security-headers:
+      headers:
+        frameDeny: true
+        contentTypeNosniff: true
+        referrerPolicy: "strict-origin-when-cross-origin"
+        browserXssFilter: true
+        customResponseHeaders:
+          X-Powered-By: ""
+          Server: ""
+
+    # Default API rate limit (per source IP). Payment endpoints add their own stricter one.
+    api-ratelimit:
+      rateLimit:
+        average: 50
+        period: 1s
+        burst: 100
+
+    payments-ratelimit:
+      rateLimit:
+        average: 10
+        period: 1s
+        burst: 20
+
+    # Circuit breaker for backend services
+    api-circuitbreaker:
+      circuitBreaker:
+        expression: "NetworkErrorRatio() > 0.30 || ResponseCodeRatio(500, 600, 0, 600) > 0.25"
+
+    # ForwardAuth → user-service /verify (JWKS + jti denylist + session binding).
+    # Services must trust ONLY these headers, reachable only via the internal network.
+    jwt-auth:
+      forwardAuth:
+        address: "http://user-service:8080/auth/verify"
+        authResponseHeaders:
+          - "X-User-Id"
+          - "X-User-Roles"
+          - "X-Session-Id"
+
+tls:
+  options:
+    default:
+      minVersion: VersionTLS12
+      sniStrict: true

@@ -1,0 +1,47 @@
+#!/bin/bash
+# Creates all peikonpurekkusu topics idempotently.
+# Naming: <domain>.<aggregate>.<event>.v<N> — keyed by aggregate id.
+# DLQs are per consumer group: <group>.<topic>.dlq
+set -euo pipefail
+
+BOOTSTRAP="${BOOTSTRAP:-kafka:19092}"
+KT=/opt/kafka/bin/kafka-topics.sh
+PARTITIONS="${PARTITIONS:-3}"
+RF="${RF:-1}"   # 3 in the ha profile
+
+create() {
+  local topic="$1"; shift
+  $KT --bootstrap-server "$BOOTSTRAP" --create --if-not-exists \
+    --topic "$topic" --partitions "$PARTITIONS" --replication-factor "$RF" "$@"
+}
+
+# Domain event topics (facts)
+create payments.payment.requested.v1
+create payments.payment.authorized.v1
+create payments.payment.captured.v1
+create payments.payment.failed.v1
+create payments.payment.reversed.v1
+create accounts.funds.held.v1
+create accounts.funds.captured.v1
+create accounts.funds.released.v1
+create transactions.transaction.recorded.v1
+create fraud.score.approved.v1
+create fraud.score.denied.v1
+create fraud.score.flagged.v1
+create identity.user.registered.v1
+create identity.user.session_revoked.v1
+create notifications.notification.requested.v1
+create notifications.notification.delivered.v1
+create notifications.notification.failed.v1
+create gateway.psp.completed.v1
+
+# Per-consumer-group dead letter queues
+create transaction-service.payments.payment.captured.v1.dlq
+create fraud-service.payments.payment.captured.v1.dlq
+create notification-service.notifications.notification.requested.v1.dlq
+create account-service.payments.payment.failed.v1.dlq
+create audit-service.firehose.dlq
+
+echo "── topics ──"
+$KT --bootstrap-server "$BOOTSTRAP" --list
+echo "── done ──"

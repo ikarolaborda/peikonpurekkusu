@@ -1,0 +1,43 @@
+# Environment / secrets
+.env
+.env.local
+*.local.env
+**/secrets/
+*.pem
+*.key
+!**/testdata/**/*.key
+
+# Node
+node_modules/
+dist/
+.angular/
+.nx/
+*.tsbuildinfo
+npm-debug.log*
+pnpm-debug.log*
+
+# Go
+**/bin/
+*.exe
+*.test
+*.out
+vendor/
+
+# .NET
+**/obj/
+**/[Bb]in/
+*.user
+.vs/
+
+# IDE / OS
+.idea/
+.vscode/
+.DS_Store
+
+# Docker / runtime artifacts
+**/.docker-data/
+coverage/
+tmp/
+
+# Agent session state
+.agent/

@@ -1,0 +1,86 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://peikonpurekkusu.dev/events/fraud-score-denied.schema.json",
+  "title": "fraud.score.denied.v1",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "event_id": {
+      "type": "string",
+      "format": "uuid",
+      "description": "uuidv7 \u2014 consumer dedup key"
+    },
+    "event_type": {
+      "type": "string",
+      "const": "fraud.score.denied.v1"
+    },
+    "schema_version": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "occurred_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "tenant_id": {
+      "type": "string",
+      "default": "peikon"
+    },
+    "correlation_id": {
+      "type": "string",
+      "description": "W3C trace-id of the originating request"
+    },
+    "causation_id": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "event_id of the event that caused this one"
+    },
+    "idempotency_key": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "client idempotency key when user-initiated"
+    },
+    "payload": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "fraud_log_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "payment_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "risk_score": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 100
+        },
+        "triggered_rules": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "fraud_log_id",
+        "payment_id",
+        "risk_score"
+      ]
+    }
+  },
+  "required": [
+    "event_id",
+    "event_type",
+    "schema_version",
+    "occurred_at",
+    "correlation_id",
+    "payload"
+  ]
+}

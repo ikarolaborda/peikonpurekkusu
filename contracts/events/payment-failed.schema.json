@@ -1,0 +1,96 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://peikonpurekkusu.dev/events/payment-failed.schema.json",
+  "title": "payments.payment.failed.v1",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "event_id": {
+      "type": "string",
+      "format": "uuid",
+      "description": "uuidv7 \u2014 consumer dedup key"
+    },
+    "event_type": {
+      "type": "string",
+      "const": "payments.payment.failed.v1"
+    },
+    "schema_version": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "occurred_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "tenant_id": {
+      "type": "string",
+      "default": "peikon"
+    },
+    "correlation_id": {
+      "type": "string",
+      "description": "W3C trace-id of the originating request"
+    },
+    "causation_id": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "event_id of the event that caused this one"
+    },
+    "idempotency_key": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "client idempotency key when user-initiated"
+    },
+    "payload": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "amount_minor_units": {
+          "type": "integer"
+        },
+        "currency_code": {
+          "type": "string",
+          "pattern": "^[A-Z]{3}$"
+        },
+        "payment_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "user_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "failure_code": {
+          "type": "string",
+          "enum": [
+            "fraud_denied",
+            "insufficient_funds",
+            "gateway_declined",
+            "gateway_unavailable",
+            "expired",
+            "canceled"
+          ]
+        },
+        "failure_detail": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "payment_id",
+        "user_id",
+        "failure_code"
+      ]
+    }
+  },
+  "required": [
+    "event_id",
+    "event_type",
+    "schema_version",
+    "occurred_at",
+    "correlation_id",
+    "payload"
+  ]
+}

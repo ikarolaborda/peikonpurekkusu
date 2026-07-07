@@ -1,0 +1,20 @@
+{
+  "accounts.funds.captured.v1": "funds-captured.schema.json",
+  "accounts.funds.held.v1": "funds-held.schema.json",
+  "accounts.funds.released.v1": "funds-released.schema.json",
+  "fraud.score.approved.v1": "fraud-score-approved.schema.json",
+  "fraud.score.denied.v1": "fraud-score-denied.schema.json",
+  "fraud.score.flagged.v1": "fraud-score-flagged.schema.json",
+  "gateway.psp.completed.v1": "psp-completed.schema.json",
+  "identity.user.registered.v1": "user-registered.schema.json",
+  "identity.user.session_revoked.v1": "session-revoked.schema.json",
+  "notifications.notification.delivered.v1": "notification-delivered.schema.json",
+  "notifications.notification.failed.v1": "notification-failed.schema.json",
+  "notifications.notification.requested.v1": "notification-requested.schema.json",
+  "payments.payment.authorized.v1": "payment-authorized.schema.json",
+  "payments.payment.captured.v1": "payment-captured.schema.json",
+  "payments.payment.failed.v1": "payment-failed.schema.json",
+  "payments.payment.requested.v1": "payment-requested.schema.json",
+  "payments.payment.reversed.v1": "payment-reversed.schema.json",
+  "transactions.transaction.recorded.v1": "transaction-recorded.schema.json"
+}
