@@ -349,6 +349,50 @@ services:
       - "traefik.http.routers.user-users.service=user-service"
       - "traefik.http.services.user-service.loadbalancer.server.port=8080"
 
+  account-service:
+    build:
+      context: .
+      dockerfile: services/account-service/Dockerfile
+    restart: unless-stopped
+    networks: [edge, internal]
+    depends_on:
+      account-db:
+        condition: service_healthy
+      redis-cache:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+      apicurio-registry:
+        condition: service_healthy
+    environment:
+      ACCOUNT_DB_HOST: account-db
+      ACCOUNT_DB_PORT: 5432
+      ACCOUNT_DB_USER: ${ACCOUNT_DB_USER}
+      ACCOUNT_DB_PASSWORD: ${ACCOUNT_DB_PASSWORD}
+      ACCOUNT_DB_NAME: ${ACCOUNT_DB_NAME}
+      REDIS_CACHE_HOST: redis-cache
+      REDIS_CACHE_PORT: 6379
+      REDIS_CACHE_PASSWORD: ${REDIS_CACHE_PASSWORD}
+      KAFKA_BOOTSTRAP_SERVERS: ${KAFKA_BOOTSTRAP_SERVERS}
+      SCHEMA_REGISTRY_URL: http://apicurio-registry:8080/apis/ccompat/v7
+      WELCOME_SEED_MINOR_UNITS: ${WELCOME_SEED_MINOR_UNITS:-100000}
+    healthcheck:
+      # distroless (no shell/curl): the binary probes itself
+      test: ["CMD", "/account-service", "healthcheck"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=peikonpurekkusu_edge"
+      - "traefik.http.routers.accounts.rule=Host(`${API_HOST}`) && PathPrefix(`/accounts`)"
+      - "traefik.http.routers.accounts.entrypoints=web"
+      - "traefik.http.routers.accounts.middlewares=security-headers@file,api-ratelimit@file,jwt-auth@file"
+      - "traefik.http.services.account-service.loadbalancer.server.port=8080"
+      - "traefik.http.services.account-service.loadbalancer.healthcheck.path=/health/ready"
+      - "traefik.http.services.account-service.loadbalancer.healthcheck.interval=10s"
+
   # ── Observability (profile) ────────────────────────────────────────────────
   otel-collector:
     image: otel/opentelemetry-collector-contrib:0.132.0

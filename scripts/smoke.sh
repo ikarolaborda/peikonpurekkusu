@@ -80,8 +80,38 @@ pass "JWKS published"
 echo ""
 echo "auth slice: ALL GREEN"
 
-# ── payment slice (activates when payment/account/fraud services land) ──────
-if curl -sf -o /dev/null "$API/accounts" -b "$JAR.new" 2>/dev/null; then
-  echo "── payment slice ───────────────────────────────────────"
-  echo "  (payment smoke steps run here once the money path ships)"
-fi
+# ── account slice ────────────────────────────────────────────────────────────
+echo ""
+echo "── account slice ───────────────────────────────────────"
+# The revoked session from the auth tests is dead — start a fresh identity.
+EMAIL2="smoke-acct+$(date +%s)@peikon.dev"
+JAR2="$(mktemp -d)/cookies2.txt"
+curl -s -o /dev/null -X POST "$API/auth/register" -H 'Content-Type: application/json' \
+  -d "{\"email\":\"$EMAIL2\",\"password\":\"$PASSWORD\",\"first_name\":\"Smoke\",\"last_name\":\"Acct\"}"
+
+# account provisioning is event-driven (outbox → Kafka → consumer): poll for it
+curl -s -c "$JAR2" -o /dev/null -X POST "$API/auth/login" \
+  -H 'Content-Type: application/json' \
+  -d "{\"email\":\"$EMAIL2\",\"password\":\"$PASSWORD\"}"
+ACC=""
+for _ in $(seq 1 20); do
+  ACC=$(curl -s -b "$JAR2" "$API/accounts" | python3 -c \
+    "import json,sys; a=json.load(sys.stdin).get('accounts',[]); print(a[0]['account_id'] if a else '')" 2>/dev/null)
+  [[ -n "$ACC" ]] && break
+  sleep 2
+done
+[[ -n "$ACC" ]] || fail "account never provisioned (outbox→Kafka→consumer pipeline)"
+pass "account auto-provisioned via Kafka ($ACC)"
+
+bal=$(curl -s -b "$JAR2" "$API/accounts/$ACC/balance" | python3 -c \
+  "import json,sys; d=json.load(sys.stdin); print(d['available_minor_units'], d['source'])")
+[[ "$bal" == "100000 ledger" ]] || fail "unexpected balance/source: $bal"
+pass "welcome deposit posted (double-entry, source=ledger)"
+
+entries=$(curl -s -b "$JAR2" "$API/accounts/$ACC/entries" | python3 -c \
+  "import json,sys; e=json.load(sys.stdin)['entries']; print(e[0]['kind'], e[0]['direction'], e[0]['amount_minor_units'])")
+[[ "$entries" == "deposit credit 100000" ]] || fail "unexpected ledger entries: $entries"
+pass "immutable ledger entries readable"
+
+echo ""
+echo "account slice: ALL GREEN"
