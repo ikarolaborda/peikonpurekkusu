@@ -117,21 +117,22 @@ services:
         condition: service_healthy
     environment:
       QUARKUS_HTTP_PORT: "8080"
-      # SQL storage — schemas survive registry restarts (in-memory loses them)
+      # SQL storage — schemas survive registry restarts (in-memory loses them).
+      # The app wires quarkus.datasource.postgresql.* (UNQUOTED name → single-
+      # underscore env vars) from apicurio.datasource.*; activation must be
+      # flipped explicitly (h2 is active by default and would otherwise run
+      # its health check against the postgres URL with the h2 driver).
       APICURIO_STORAGE_KIND: sql
       APICURIO_STORAGE_SQL_KIND: postgresql
       APICURIO_DATASOURCE_URL: jdbc:postgresql://registry-db:5432/registry
       APICURIO_DATASOURCE_USERNAME: registry
       APICURIO_DATASOURCE_PASSWORD: ${REGISTRY_DB_PASSWORD:-registry-dev-pw}
-      # activate the named Quarkus datasource the sql storage binds to
-      QUARKUS_DATASOURCE__POSTGRESQL__ACTIVE: "true"
-      QUARKUS_DATASOURCE__POSTGRESQL__DB_KIND: postgresql
-      QUARKUS_DATASOURCE__POSTGRESQL__JDBC_URL: jdbc:postgresql://registry-db:5432/registry
-      QUARKUS_DATASOURCE__POSTGRESQL__USERNAME: registry
-      QUARKUS_DATASOURCE__POSTGRESQL__PASSWORD: ${REGISTRY_DB_PASSWORD:-registry-dev-pw}
+      QUARKUS_DATASOURCE_POSTGRESQL_ACTIVE: "true"
+      QUARKUS_DATASOURCE_H2_ACTIVE: "false"
     healthcheck:
-      # health lives on the Quarkus management interface (:9000), not :8080
-      test: ["CMD-SHELL", "curl -fsS http://localhost:9000/health/ready || exit 1"]
+      # functional probe: ccompat API answering implies storage is working
+      # (the image's /health/ready is unusable with sql storage — see above)
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8080/apis/ccompat/v7/subjects || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 12
