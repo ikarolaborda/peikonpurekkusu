@@ -496,6 +496,41 @@ services:
       retries: 10
       start_period: 25s
 
+  transaction-service:
+    build:
+      context: .
+      dockerfile: services/transaction-service/Dockerfile
+    restart: unless-stopped
+    networks: [edge, internal]
+    depends_on:
+      transaction-db:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+      apicurio-registry:
+        condition: service_healthy
+    environment:
+      TRANSACTION_DB_HOST: transaction-db
+      TRANSACTION_DB_PORT: 5432
+      TRANSACTION_DB_USER: ${TRANSACTION_DB_USER}
+      TRANSACTION_DB_PASSWORD: ${TRANSACTION_DB_PASSWORD}
+      TRANSACTION_DB_NAME: ${TRANSACTION_DB_NAME}
+      KAFKA_BOOTSTRAP_SERVERS: ${KAFKA_BOOTSTRAP_SERVERS}
+      SCHEMA_REGISTRY_URL: http://apicurio-registry:8080/apis/ccompat/v7
+    healthcheck:
+      test: ["CMD", "dotnet", "TransactionService.dll", "healthcheck"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 25s
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=peikonpurekkusu_edge"
+      - "traefik.http.routers.transactions.rule=Host(`${API_HOST}`) && PathPrefix(`/transactions`)"
+      - "traefik.http.routers.transactions.entrypoints=web"
+      - "traefik.http.routers.transactions.middlewares=security-headers@file,api-ratelimit@file,jwt-auth@file"
+      - "traefik.http.services.transaction-service.loadbalancer.server.port=8080"
+
   # ── Observability (profile) ────────────────────────────────────────────────
   otel-collector:
     image: otel/opentelemetry-collector-contrib:0.132.0

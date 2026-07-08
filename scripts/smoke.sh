@@ -96,7 +96,7 @@ curl -s -c "$JAR2" -o /dev/null -X POST "$API/auth/login" \
 ACC=""
 for _ in $(seq 1 20); do
   ACC=$(curl -s -b "$JAR2" "$API/accounts" | python3 -c \
-    "import json,sys; a=json.load(sys.stdin).get('accounts',[]); print(a[0]['account_id'] if a else '')" 2>/dev/null)
+    "import json,sys; a=json.load(sys.stdin).get('accounts',[]); print(a[0]['account_id'] if a else '')" 2>/dev/null || true)
   [[ -n "$ACC" ]] && break
   sleep 2
 done
@@ -104,12 +104,12 @@ done
 pass "account auto-provisioned via Kafka ($ACC)"
 
 bal=$(curl -s -b "$JAR2" "$API/accounts/$ACC/balance" | python3 -c \
-  "import json,sys; d=json.load(sys.stdin); print(d['available_minor_units'], d['source'])")
+  "import json,sys; d=json.load(sys.stdin); print(d['available_minor_units'], d['source'])" 2>/dev/null || true)
 [[ "$bal" == "100000 ledger" ]] || fail "unexpected balance/source: $bal"
 pass "welcome deposit posted (double-entry, source=ledger)"
 
 entries=$(curl -s -b "$JAR2" "$API/accounts/$ACC/entries" | python3 -c \
-  "import json,sys; e=json.load(sys.stdin)['entries']; print(e[0]['kind'], e[0]['direction'], e[0]['amount_minor_units'])")
+  "import json,sys; e=json.load(sys.stdin)['entries']; print(e[0]['kind'], e[0]['direction'], e[0]['amount_minor_units'])" 2>/dev/null || true)
 [[ "$entries" == "deposit credit 100000" ]] || fail "unexpected ledger entries: $entries"
 pass "immutable ledger entries readable"
 
@@ -123,7 +123,7 @@ CARD=00000000-0000-0000-0000-0000000ca4d1
 WALLET=00000000-0000-0000-0000-0000000a11e7
 CSRF2=$(curl -s -b "$JAR2" -c "$JAR2" -X POST "$API/auth/login" \
   -H 'Content-Type: application/json' \
-  -d "{\"email\":\"$EMAIL2\",\"password\":\"$PASSWORD\"}" | json_get csrf_token)
+  -d "{\"email\":\"$EMAIL2\",\"password\":\"$PASSWORD\"}" | json_get csrf_token || true)
 
 pay() { # $1 key  $2 amount  $3 instrument
   curl -s -b "$JAR2" -X POST "$API/payments" -H 'Content-Type: application/json' \
@@ -131,7 +131,7 @@ pay() { # $1 key  $2 amount  $3 instrument
     -d "{\"account_id\":\"$ACC\",\"merchant_id\":\"m-coffee\",\"instrument_id\":\"$3\",\"amount\":{\"amount_minor_units\":$2,\"currency_code\":\"USD\"}}"
 }
 status_of() {
-  curl -s -b "$JAR2" "$API/payments/$1" | python3 -c "import json,sys;d=json.load(sys.stdin);print(d['status'])"
+  curl -s -b "$JAR2" "$API/payments/$1" | python3 -c "import json,sys;d=json.load(sys.stdin);print(d['status'])" 2>/dev/null || true
 }
 wait_terminal() { # $1 payment id
   for _ in $(seq 1 15); do
@@ -167,6 +167,19 @@ bal2=$(curl -s -b "$JAR2" "$API/accounts/$ACC/balance" | python3 -c \
   "import json,sys;d=json.load(sys.stdin);print(d['available_minor_units'], d['held_minor_units'])")
 [[ "$bal2" == "95450 0" ]] || fail "balance drift after payment mix: $bal2 (want 95450 0)"
 pass "ledger exact after success+decline+async mix (95450/0)"
+
+# transaction recorded from the successful card payment (async fact fan-out).
+# Generous window: on a resource-constrained host, Kafka group coordination
+# adds latency to the .NET consumer's first fetch after any rebalance.
+TXN=""
+for _ in $(seq 1 30); do
+  TXN=$(curl -s -b "$JAR2" "$API/transactions" | python3 -c \
+    "import json,sys;t=json.load(sys.stdin)['transactions'];print(next((x['amount_minor_units'] for x in t if x['transaction_type']=='purchase'), ''))" 2>/dev/null || true)
+  [[ -n "$TXN" ]] && break
+  sleep 2
+done
+[[ -n "$TXN" ]] || fail "captured payment never reached transaction history"
+pass "transaction recorded from captured payment (Kafka fact → .NET service)"
 
 echo ""
 echo "payment slice: ALL GREEN"
