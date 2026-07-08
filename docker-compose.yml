@@ -76,6 +76,8 @@ services:
       KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
       KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
       KAFKA_LOG_DIRS: "/var/lib/kafka/data"
+      # keep the broker a small target on memory-constrained Docker VMs
+      KAFKA_HEAP_OPTS: "-Xmx384M -Xms256M"
     volumes:
       - kafka-data:/var/lib/kafka/data
     healthcheck:
@@ -392,6 +394,72 @@ services:
       - "traefik.http.services.account-service.loadbalancer.server.port=8080"
       - "traefik.http.services.account-service.loadbalancer.healthcheck.path=/health/ready"
       - "traefik.http.services.account-service.loadbalancer.healthcheck.interval=10s"
+
+  mock-psp:
+    build:
+      context: .
+      dockerfile: services/mock-psp/Dockerfile
+    restart: unless-stopped
+    networks: [internal]
+    depends_on:
+      kafka:
+        condition: service_healthy
+      apicurio-registry:
+        condition: service_healthy
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: ${KAFKA_BOOTSTRAP_SERVERS}
+      SCHEMA_REGISTRY_URL: http://apicurio-registry:8080/apis/ccompat/v7
+      MOCK_PSP_LATENCY_MS: ${MOCK_PSP_LATENCY_MS}
+      MOCK_PSP_FAILURE_RATE: ${MOCK_PSP_FAILURE_RATE}
+    healthcheck:
+      test: ["CMD", "/mock-psp", "healthcheck"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  payment-service:
+    build:
+      context: .
+      dockerfile: services/payment-service/Dockerfile
+    restart: unless-stopped
+    networks: [edge, internal]
+    depends_on:
+      payment-db:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+      apicurio-registry:
+        condition: service_healthy
+      account-service:
+        condition: service_healthy
+      mock-psp:
+        condition: service_healthy
+    environment:
+      PAYMENT_DB_HOST: payment-db
+      PAYMENT_DB_PORT: 5432
+      PAYMENT_DB_USER: ${PAYMENT_DB_USER}
+      PAYMENT_DB_PASSWORD: ${PAYMENT_DB_PASSWORD}
+      PAYMENT_DB_NAME: ${PAYMENT_DB_NAME}
+      KAFKA_BOOTSTRAP_SERVERS: ${KAFKA_BOOTSTRAP_SERVERS}
+      SCHEMA_REGISTRY_URL: http://apicurio-registry:8080/apis/ccompat/v7
+      ACCOUNT_GRPC_ADDR: account-service:9090
+      FRAUD_GRPC_ADDR: fraud-service:9090
+      MOCK_PSP_BASE_URL: http://mock-psp:8080
+      FRAUD_FAIL_OPEN_LIMIT: ${FRAUD_FAIL_OPEN_LIMIT:-5000}
+    healthcheck:
+      test: ["CMD", "/payment-service", "healthcheck"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=peikonpurekkusu_edge"
+      - "traefik.http.routers.payments.rule=Host(`${API_HOST}`) && PathPrefix(`/payments`)"
+      - "traefik.http.routers.payments.entrypoints=web"
+      - "traefik.http.routers.payments.middlewares=security-headers@file,payments-ratelimit@file,jwt-auth@file"
+      - "traefik.http.services.payment-service.loadbalancer.server.port=8080"
 
   # ── Observability (profile) ────────────────────────────────────────────────
   otel-collector:

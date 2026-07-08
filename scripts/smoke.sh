@@ -115,3 +115,58 @@ pass "immutable ledger entries readable"
 
 echo ""
 echo "account slice: ALL GREEN"
+
+# ── payment slice ────────────────────────────────────────────────────────────
+echo ""
+echo "── payment slice ───────────────────────────────────────"
+CARD=00000000-0000-0000-0000-0000000ca4d1
+WALLET=00000000-0000-0000-0000-0000000a11e7
+CSRF2=$(curl -s -b "$JAR2" -c "$JAR2" -X POST "$API/auth/login" \
+  -H 'Content-Type: application/json' \
+  -d "{\"email\":\"$EMAIL2\",\"password\":\"$PASSWORD\"}" | json_get csrf_token)
+
+pay() { # $1 key  $2 amount  $3 instrument
+  curl -s -b "$JAR2" -X POST "$API/payments" -H 'Content-Type: application/json' \
+    -H "X-CSRF-Token: $CSRF2" -H "Idempotency-Key: $1" \
+    -d "{\"account_id\":\"$ACC\",\"merchant_id\":\"m-coffee\",\"instrument_id\":\"$3\",\"amount\":{\"amount_minor_units\":$2,\"currency_code\":\"USD\"}}"
+}
+status_of() {
+  curl -s -b "$JAR2" "$API/payments/$1" | python3 -c "import json,sys;d=json.load(sys.stdin);print(d['status'])"
+}
+wait_terminal() { # $1 payment id
+  for _ in $(seq 1 15); do
+    st=$(status_of "$1"); [[ "$st" != "processing" ]] && { echo "$st"; return; }
+    sleep 2
+  done
+  echo "processing"
+}
+
+# happy path (card, sync)
+PID=$(pay "smoke-ok-$EMAIL2" 1250 $CARD | json_get id)
+[[ -n "$PID" ]] || fail "payment create returned no id"
+[[ "$(wait_terminal $PID)" == "succeeded" ]] || fail "card payment did not succeed"
+pass "card payment: saga → succeeded (fraud→hold→PSP→capture)"
+
+# idempotent replay returns the SAME payment
+PID2=$(pay "smoke-ok-$EMAIL2" 1250 $CARD | json_get id)
+[[ "$PID2" == "$PID" ]] || fail "idempotency replay returned a different payment"
+pass "idempotency replay (same payment, no double charge)"
+
+# hard decline (…42) compensates the hold
+PD=$(pay "smoke-decline-$EMAIL2" 2042 $CARD | json_get id)
+[[ "$(wait_terminal $PD)" == "failed" ]] || fail "decline did not fail"
+pass "gateway decline → failed + hold released"
+
+# wallet async completes via gateway.psp.completed.v1
+PW_ID=$(pay "smoke-wallet-$EMAIL2" 3300 $WALLET | json_get id)
+[[ "$(wait_terminal $PW_ID)" == "succeeded" ]] || fail "wallet payment did not complete asynchronously"
+pass "wallet payment: async PSP completion via Kafka"
+
+# ledger integrity: 100000 - 1250 - 3300 = 95450, nothing held
+bal2=$(curl -s -b "$JAR2" "$API/accounts/$ACC/balance" | python3 -c \
+  "import json,sys;d=json.load(sys.stdin);print(d['available_minor_units'], d['held_minor_units'])")
+[[ "$bal2" == "95450 0" ]] || fail "balance drift after payment mix: $bal2 (want 95450 0)"
+pass "ledger exact after success+decline+async mix (95450/0)"
+
+echo ""
+echo "payment slice: ALL GREEN"
