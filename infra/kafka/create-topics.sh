@@ -37,9 +37,15 @@ create gateway.psp.completed.v1
 
 # Per-consumer-group dead letter queues
 create transaction-service.payments.payment.captured.v1.dlq
+create transaction-service.payments.payment.reversed.v1.dlq
 create fraud-service.payments.payment.captured.v1.dlq
-create notification-service.notifications.notification.requested.v1.dlq
+create payment-service.gateway.psp.completed.v1.dlq
 create account-service.payments.payment.failed.v1.dlq
+create account-service.identity.user.registered.v1.dlq
+create notification-service.identity.user.registered.v1.dlq
+create notification-service.payments.payment.captured.v1.dlq
+create notification-service.payments.payment.failed.v1.dlq
+create notification-service.fraud.score.flagged.v1.dlq
 create audit-service.firehose.dlq
 
 echo "── topics ──"
