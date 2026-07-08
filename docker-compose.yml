@@ -461,6 +461,41 @@ services:
       - "traefik.http.routers.payments.middlewares=security-headers@file,payments-ratelimit@file,jwt-auth@file"
       - "traefik.http.services.payment-service.loadbalancer.server.port=8080"
 
+  fraud-service:
+    build:
+      context: .
+      dockerfile: services/fraud-service/Dockerfile
+    restart: unless-stopped
+    networks: [internal]
+    depends_on:
+      fraud-db:
+        condition: service_healthy
+      redis-cache:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+      apicurio-registry:
+        condition: service_healthy
+    environment:
+      FRAUD_DB_HOST: fraud-db
+      FRAUD_DB_PORT: 5432
+      FRAUD_DB_USER: ${FRAUD_DB_USER}
+      FRAUD_DB_PASSWORD: ${FRAUD_DB_PASSWORD}
+      FRAUD_DB_NAME: ${FRAUD_DB_NAME}
+      REDIS_CACHE_HOST: redis-cache
+      REDIS_CACHE_PORT: 6379
+      REDIS_CACHE_PASSWORD: ${REDIS_CACHE_PASSWORD}
+      KAFKA_BOOTSTRAP_SERVERS: ${KAFKA_BOOTSTRAP_SERVERS}
+      SCHEMA_REGISTRY_URL: http://apicurio-registry:8080/apis/ccompat/v7
+      FRAUD_FAIL_CLOSED_THRESHOLD: ${FRAUD_FAIL_OPEN_LIMIT:-5000}
+      FRAUD_ML_ENABLED: "false"
+    healthcheck:
+      test: ["CMD", "dotnet", "FraudService.dll", "healthcheck"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 25s
+
   # ── Observability (profile) ────────────────────────────────────────────────
   otel-collector:
     image: otel/opentelemetry-collector-contrib:0.132.0
