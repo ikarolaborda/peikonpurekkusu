@@ -531,6 +531,37 @@ services:
       - "traefik.http.routers.transactions.middlewares=security-headers@file,api-ratelimit@file,jwt-auth@file"
       - "traefik.http.services.transaction-service.loadbalancer.server.port=8080"
 
+  audit-service:
+    build:
+      context: .
+      dockerfile: services/audit-service/Dockerfile
+    restart: unless-stopped
+    networks: [internal]
+    depends_on:
+      audit-db:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+      apicurio-registry:
+        condition: service_healthy
+    environment:
+      AUDIT_SINK: ${AUDIT_SINK:-postgres}
+      AUDIT_DB_HOST: audit-db
+      AUDIT_DB_PORT: 5432
+      AUDIT_DB_USER: ${AUDIT_DB_USER}
+      AUDIT_DB_PASSWORD: ${AUDIT_DB_PASSWORD}
+      AUDIT_DB_NAME: ${AUDIT_DB_NAME}
+      CASSANDRA_CONTACT_POINTS: cassandra
+      CASSANDRA_KEYSPACE: audit
+      KAFKA_BOOTSTRAP_SERVERS: ${KAFKA_BOOTSTRAP_SERVERS}
+      SCHEMA_REGISTRY_URL: http://apicurio-registry:8080/apis/ccompat/v7
+    healthcheck:
+      test: ["CMD", "/audit-service", "healthcheck"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
+
   # ── Observability (profile) ────────────────────────────────────────────────
   otel-collector:
     image: otel/opentelemetry-collector-contrib:0.132.0
