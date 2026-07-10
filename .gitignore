@@ -41,3 +41,6 @@ tmp/
 
 # Agent session state
 .agent/
+
+# Bicep build output
+infra/azure/*.json

@@ -1,0 +1,78 @@
+# Azure Developer CLI (azd) service map. `azd up` builds each service's image,
+# pushes to ACR, and deploys to the Container Apps environment provisioned by
+# the Bicep under ./infra. Backing services (Event Hubs, PostgreSQL Flexible
+# Server, Managed Redis, Key Vault, ACR) are provisioned by Bicep, not azd
+# service hosts.
+name: peikonpurekkusu
+metadata:
+  template: peikonpurekkusu@1.0.0
+
+infra:
+  provider: bicep
+  path: .
+  module: main
+
+services:
+  user-service:
+    project: ../../services/user-service
+    language: ts
+    host: containerapp
+    docker:
+      path: Dockerfile
+      context: ../..
+  account-service:
+    project: ../../services/account-service
+    language: go
+    host: containerapp
+    docker:
+      path: Dockerfile
+      context: ../..
+  payment-service:
+    project: ../../services/payment-service
+    language: go
+    host: containerapp
+    docker:
+      path: Dockerfile
+      context: ../..
+  mock-psp:
+    project: ../../services/mock-psp
+    language: go
+    host: containerapp
+    docker:
+      path: Dockerfile
+      context: ../..
+  transaction-service:
+    project: ../../services/transaction-service
+    language: dotnet
+    host: containerapp
+    docker:
+      path: Dockerfile
+      context: ../..
+  fraud-service:
+    project: ../../services/fraud-service
+    language: dotnet
+    host: containerapp
+    docker:
+      path: Dockerfile
+      context: ../..
+  notification-service:
+    project: ../../services/notification-service
+    language: ts
+    host: containerapp
+    docker:
+      path: Dockerfile
+      context: ../..
+  audit-service:
+    project: ../../services/audit-service
+    language: go
+    host: containerapp
+    docker:
+      path: Dockerfile
+      context: ../..
+  frontend:
+    project: ../../frontend
+    language: ts
+    host: containerapp
+    docker:
+      path: Dockerfile
+      context: ../..
