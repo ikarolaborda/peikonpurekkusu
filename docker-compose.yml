@@ -12,6 +12,7 @@ name: peikonpurekkusu
 x-postgres-base: &postgres-base
   image: postgres:18.4-alpine
   restart: unless-stopped
+  mem_limit: 224m
   networks: [internal]
   healthcheck:
     test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
@@ -22,6 +23,7 @@ x-postgres-base: &postgres-base
 services:
   # ── Edge ───────────────────────────────────────────────────────────────────
   traefik:
+    mem_limit: 128m
     image: traefik:v3.7
     restart: unless-stopped
     command:
@@ -59,6 +61,7 @@ services:
 
   # ── Kafka (KRaft, dev: single combined-mode broker) ───────────────────────
   kafka:
+    mem_limit: 768m
     image: apache/kafka:4.3.1
     restart: unless-stopped
     networks: [internal]
@@ -115,6 +118,7 @@ services:
       - registry-db-data:/var/lib/postgresql
 
   apicurio-registry:
+    mem_limit: 448m
     image: quay.io/apicurio/apicurio-registry:3.3.0
     restart: unless-stopped
     networks: [internal]
@@ -162,6 +166,7 @@ services:
 
   # ── Redis (two instances: session/denylist must never evict; cache may) ───
   redis-session:
+    mem_limit: 320m
     image: redis:8.8-alpine
     restart: unless-stopped
     networks: [internal]
@@ -180,6 +185,7 @@ services:
       REDIS_PASSWORD: ${REDIS_SESSION_PASSWORD}
 
   redis-cache:
+    mem_limit: 320m
     image: redis:8.8-alpine
     restart: unless-stopped
     networks: [internal]
@@ -298,6 +304,7 @@ services:
 
   # ── Application services ───────────────────────────────────────────────────
   user-service:
+    mem_limit: 320m
     build:
       context: .
       dockerfile: services/user-service/Dockerfile
@@ -357,6 +364,7 @@ services:
       - "traefik.http.services.peikon-user.loadbalancer.server.port=8080"
 
   account-service:
+    mem_limit: 128m
     build:
       context: .
       dockerfile: services/account-service/Dockerfile
@@ -402,6 +410,7 @@ services:
       - "traefik.http.services.peikon-account.loadbalancer.healthcheck.interval=10s"
 
   mock-psp:
+    mem_limit: 64m
     build:
       context: .
       dockerfile: services/mock-psp/Dockerfile
@@ -425,6 +434,7 @@ services:
       start_period: 10s
 
   payment-service:
+    mem_limit: 128m
     build:
       context: .
       dockerfile: services/payment-service/Dockerfile
@@ -469,6 +479,7 @@ services:
       - "traefik.http.services.peikon-payment.loadbalancer.server.port=8080"
 
   fraud-service:
+    mem_limit: 320m
     build:
       context: .
       dockerfile: services/fraud-service/Dockerfile
@@ -504,6 +515,7 @@ services:
       start_period: 25s
 
   transaction-service:
+    mem_limit: 320m
     build:
       context: .
       dockerfile: services/transaction-service/Dockerfile
@@ -540,6 +552,7 @@ services:
       - "traefik.http.services.peikon-transaction.loadbalancer.server.port=8080"
 
   audit-service:
+    mem_limit: 128m
     build:
       context: .
       dockerfile: services/audit-service/Dockerfile
@@ -571,6 +584,7 @@ services:
       start_period: 15s
 
   notification-service:
+    mem_limit: 320m
     build:
       context: .
       dockerfile: services/notification-service/Dockerfile
@@ -607,6 +621,7 @@ services:
       - "traefik.http.services.peikon-notification.loadbalancer.server.port=8080"
 
   frontend:
+    mem_limit: 64m
     build:
       context: .
       dockerfile: frontend/Dockerfile
