@@ -133,13 +133,15 @@ export class NotificationConsumer implements OnModuleInit, OnModuleDestroy {
     const em = this.orm.em.fork();
     await em.transactional(async (tem) => {
       // Idempotency gate: insert-or-skip in the same tx as the effect.
-      const inserted = (await tem
+      // RETURNING makes the outcome deterministic across driver versions —
+      // affectedRows is NOT populated for INSERT..ON CONFLICT here.
+      const rows = (await tem
         .getConnection()
-        .execute('insert into processed_events (event_id, processed_at) values (?, now()) on conflict do nothing', [
-          env.event_id,
-        ])) as { affectedRows?: number; rowCount?: number };
-      const affected = inserted.affectedRows ?? inserted.rowCount ?? 0;
-      if (affected === 0) return; // already processed
+        .execute(
+          'insert into processed_events (event_id, processed_at) values (?, now()) on conflict do nothing returning event_id',
+          [env.event_id],
+        )) as unknown[];
+      if (!Array.isArray(rows) || rows.length === 0) return; // already processed
 
       const notification = tem.create(Notification, {
         userId,

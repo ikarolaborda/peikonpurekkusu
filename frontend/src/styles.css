@@ -1,1 +1,184 @@
-/* You can add global styles to this file, and also import other style files */
+@import "tailwindcss";
+@import "@fontsource/jetbrains-mono/400.css";
+@import "@fontsource/jetbrains-mono/500.css";
+@import "@fontsource/jetbrains-mono/700.css";
+
+/*
+ * peikon — visual identity
+ * Flat, terminal-adjacent, unapologetically square. Dark-first, oklch palette,
+ * monospace numerals for money, 1px hard borders, no shadows.
+ */
+@theme {
+  /* Square borders are a design rule, not a suggestion: every radius token is
+     zeroed so imported components render square too. rounded-full is a static
+     utility, overridden below. */
+  --radius-xs: 0px;
+  --radius-sm: 0px;
+  --radius-md: 0px;
+  --radius-lg: 0px;
+  --radius-xl: 0px;
+  --radius-2xl: 0px;
+  --radius-3xl: 0px;
+  --radius-4xl: 0px;
+
+  /* Ink base — near-black with a faint cool cast */
+  --color-ink-950: oklch(0.15 0.012 265);
+  --color-ink-900: oklch(0.19 0.014 265);
+  --color-ink-850: oklch(0.23 0.015 265);
+  --color-ink-800: oklch(0.28 0.016 265);
+  --color-ink-700: oklch(0.36 0.017 265);
+  --color-ink-600: oklch(0.48 0.016 265);
+  --color-ink-400: oklch(0.68 0.014 265);
+  --color-ink-200: oklch(0.86 0.010 265);
+  --color-ink-050: oklch(0.96 0.006 265);
+
+  /* Electric magenta accent (nod to the source diagrams) */
+  --color-accent-600: oklch(0.58 0.27 340);
+  --color-accent-500: oklch(0.66 0.28 340);
+  --color-accent-400: oklch(0.74 0.22 340);
+
+  /* Status */
+  --color-success-500: oklch(0.78 0.20 152);
+  --color-success-600: oklch(0.68 0.19 152);
+  --color-danger-500: oklch(0.64 0.24 25);
+  --color-danger-600: oklch(0.57 0.24 25);
+  --color-warning-500: oklch(0.80 0.16 85);
+
+  --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  --font-sans: "JetBrains Mono", ui-monospace, monospace;
+}
+
+/* Semantic aliases resolved per theme (dark default). */
+@theme inline {
+  --color-surface: var(--color-ink-950);
+  --color-raised: var(--color-ink-900);
+  --color-overlay: var(--color-ink-850);
+  --color-border: var(--color-ink-800);
+  --color-border-strong: var(--color-ink-700);
+  --color-text: var(--color-ink-050);
+  --color-text-muted: var(--color-ink-400);
+  --color-text-dim: var(--color-ink-600);
+}
+
+/* Square even the "pill" — the design rule is unbypassable. */
+@utility rounded-full {
+  border-radius: 0;
+}
+
+:root {
+  color-scheme: dark;
+}
+
+/* Light theme via a data-attribute toggle. */
+@custom-variant light (&:where([data-theme="light"], [data-theme="light"] *));
+
+:root[data-theme="light"] {
+  color-scheme: light;
+  --color-surface: var(--color-ink-050);
+  --color-raised: oklch(1 0 0);
+  --color-overlay: var(--color-ink-050);
+  --color-border: var(--color-ink-200);
+  --color-border-strong: var(--color-ink-400);
+  --color-text: var(--color-ink-950);
+  --color-text-muted: var(--color-ink-600);
+  --color-text-dim: var(--color-ink-400);
+}
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--color-surface);
+  color: var(--color-text);
+  font-family: var(--font-sans);
+  font-feature-settings: "tnum" 1, "zero" 1;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Money and other figures: tabular monospace alignment. */
+.tabular {
+  font-variant-numeric: tabular-nums;
+  font-family: var(--font-mono);
+}
+
+*:focus-visible {
+  outline: 2px solid var(--color-accent-500);
+  outline-offset: 1px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* ── Component primitives (flat, square, 1px borders, no shadows) ─────────── */
+.card {
+  background: var(--color-raised);
+  border: 1px solid var(--color-border);
+}
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 0.625rem 1rem;
+  border: 1px solid var(--color-border-strong);
+  background: transparent;
+  color: var(--color-text);
+  font-weight: 500;
+  cursor: pointer;
+  transition: background-color 0.12s ease, border-color 0.12s ease;
+}
+.btn:hover:not(:disabled) {
+  background: var(--color-overlay);
+}
+.btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.btn-accent {
+  background: var(--color-accent-500);
+  border-color: var(--color-accent-500);
+  color: var(--color-ink-950);
+  font-weight: 700;
+}
+.btn-accent:hover:not(:disabled) {
+  background: var(--color-accent-400);
+  border-color: var(--color-accent-400);
+}
+.input {
+  width: 100%;
+  padding: 0.625rem 0.75rem;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border-strong);
+  color: var(--color-text);
+  font-family: var(--font-mono);
+}
+.input::placeholder {
+  color: var(--color-text-dim);
+}
+.label {
+  display: block;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--color-text-muted);
+  margin-bottom: 0.375rem;
+}
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0.125rem 0.5rem;
+  border: 1px solid var(--color-border-strong);
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}

@@ -27,6 +27,9 @@ services:
     command:
       - "--providers.docker=true"
       - "--providers.docker.exposedByDefault=false"
+      # Only ingest OUR containers: other local stacks define colliding router
+      # names (e.g. a generic "frontend") on the same Docker daemon.
+      - "--providers.docker.constraints=Label(`peikon.stack`,`true`)"
       - "--providers.docker.network=peikonpurekkusu_edge"
       - "--providers.file.filename=/etc/traefik/dynamic.yml"
       - "--entryPoints.web.address=:80"
@@ -47,11 +50,12 @@ services:
       retries: 5
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.dashboard.rule=Host(`${TRAEFIK_DASHBOARD_HOST}`) && (PathPrefix(`/api`) || PathPrefix(`/dashboard`))"
-      - "traefik.http.routers.dashboard.service=api@internal"
-      - "traefik.http.routers.dashboard.entrypoints=web"
-      - "traefik.http.routers.dashboard.middlewares=dash-auth"
-      - "traefik.http.middlewares.dash-auth.basicauth.users=${TRAEFIK_DASHBOARD_AUTH}"
+      - "peikon.stack=true"
+      - "traefik.http.routers.peikon-dashboard.rule=Host(`${TRAEFIK_DASHBOARD_HOST}`) && (PathPrefix(`/api`) || PathPrefix(`/dashboard`))"
+      - "traefik.http.routers.peikon-dashboard.service=api@internal"
+      - "traefik.http.routers.peikon-dashboard.entrypoints=web"
+      - "traefik.http.routers.peikon-dashboard.middlewares=peikon-dash-auth"
+      - "traefik.http.middlewares.peikon-dash-auth.basicauth.users=${TRAEFIK_DASHBOARD_AUTH}"
 
   # ── Kafka (KRaft, dev: single combined-mode broker) ───────────────────────
   kafka:
@@ -338,18 +342,19 @@ services:
       start_period: 20s
     labels:
       - "traefik.enable=true"
+      - "peikon.stack=true"
       - "traefik.docker.network=peikonpurekkusu_edge"
       # /auth + /.well-known are public (no ForwardAuth — they ARE the authenticator)
-      - "traefik.http.routers.user-auth.rule=Host(`${API_HOST}`) && (PathPrefix(`/auth`) || PathPrefix(`/.well-known`))"
-      - "traefik.http.routers.user-auth.entrypoints=web"
-      - "traefik.http.routers.user-auth.middlewares=security-headers@file,api-ratelimit@file"
-      - "traefik.http.routers.user-auth.service=user-service"
+      - "traefik.http.routers.peikon-user-auth.rule=Host(`${API_HOST}`) && (PathPrefix(`/auth`) || PathPrefix(`/.well-known`))"
+      - "traefik.http.routers.peikon-user-auth.entrypoints=web"
+      - "traefik.http.routers.peikon-user-auth.middlewares=security-headers@file,api-ratelimit@file"
+      - "traefik.http.routers.peikon-user-auth.service=peikon-user"
       # /users requires a verified session at the edge
-      - "traefik.http.routers.user-users.rule=Host(`${API_HOST}`) && PathPrefix(`/users`)"
-      - "traefik.http.routers.user-users.entrypoints=web"
-      - "traefik.http.routers.user-users.middlewares=security-headers@file,api-ratelimit@file,jwt-auth@file"
-      - "traefik.http.routers.user-users.service=user-service"
-      - "traefik.http.services.user-service.loadbalancer.server.port=8080"
+      - "traefik.http.routers.peikon-user-users.rule=Host(`${API_HOST}`) && PathPrefix(`/users`)"
+      - "traefik.http.routers.peikon-user-users.entrypoints=web"
+      - "traefik.http.routers.peikon-user-users.middlewares=security-headers@file,api-ratelimit@file,jwt-auth@file"
+      - "traefik.http.routers.peikon-user-users.service=peikon-user"
+      - "traefik.http.services.peikon-user.loadbalancer.server.port=8080"
 
   account-service:
     build:
@@ -387,13 +392,14 @@ services:
       start_period: 15s
     labels:
       - "traefik.enable=true"
+      - "peikon.stack=true"
       - "traefik.docker.network=peikonpurekkusu_edge"
-      - "traefik.http.routers.accounts.rule=Host(`${API_HOST}`) && PathPrefix(`/accounts`)"
-      - "traefik.http.routers.accounts.entrypoints=web"
-      - "traefik.http.routers.accounts.middlewares=security-headers@file,api-ratelimit@file,jwt-auth@file"
-      - "traefik.http.services.account-service.loadbalancer.server.port=8080"
-      - "traefik.http.services.account-service.loadbalancer.healthcheck.path=/health/ready"
-      - "traefik.http.services.account-service.loadbalancer.healthcheck.interval=10s"
+      - "traefik.http.routers.peikon-accounts.rule=Host(`${API_HOST}`) && PathPrefix(`/accounts`)"
+      - "traefik.http.routers.peikon-accounts.entrypoints=web"
+      - "traefik.http.routers.peikon-accounts.middlewares=security-headers@file,api-ratelimit@file,jwt-auth@file"
+      - "traefik.http.services.peikon-account.loadbalancer.server.port=8080"
+      - "traefik.http.services.peikon-account.loadbalancer.healthcheck.path=/health/ready"
+      - "traefik.http.services.peikon-account.loadbalancer.healthcheck.interval=10s"
 
   mock-psp:
     build:
@@ -455,11 +461,12 @@ services:
       start_period: 15s
     labels:
       - "traefik.enable=true"
+      - "peikon.stack=true"
       - "traefik.docker.network=peikonpurekkusu_edge"
-      - "traefik.http.routers.payments.rule=Host(`${API_HOST}`) && PathPrefix(`/payments`)"
-      - "traefik.http.routers.payments.entrypoints=web"
-      - "traefik.http.routers.payments.middlewares=security-headers@file,payments-ratelimit@file,jwt-auth@file"
-      - "traefik.http.services.payment-service.loadbalancer.server.port=8080"
+      - "traefik.http.routers.peikon-payments.rule=Host(`${API_HOST}`) && PathPrefix(`/payments`)"
+      - "traefik.http.routers.peikon-payments.entrypoints=web"
+      - "traefik.http.routers.peikon-payments.middlewares=security-headers@file,payments-ratelimit@file,jwt-auth@file"
+      - "traefik.http.services.peikon-payment.loadbalancer.server.port=8080"
 
   fraud-service:
     build:
@@ -525,11 +532,12 @@ services:
       start_period: 25s
     labels:
       - "traefik.enable=true"
+      - "peikon.stack=true"
       - "traefik.docker.network=peikonpurekkusu_edge"
-      - "traefik.http.routers.transactions.rule=Host(`${API_HOST}`) && PathPrefix(`/transactions`)"
-      - "traefik.http.routers.transactions.entrypoints=web"
-      - "traefik.http.routers.transactions.middlewares=security-headers@file,api-ratelimit@file,jwt-auth@file"
-      - "traefik.http.services.transaction-service.loadbalancer.server.port=8080"
+      - "traefik.http.routers.peikon-transactions.rule=Host(`${API_HOST}`) && PathPrefix(`/transactions`)"
+      - "traefik.http.routers.peikon-transactions.entrypoints=web"
+      - "traefik.http.routers.peikon-transactions.middlewares=security-headers@file,api-ratelimit@file,jwt-auth@file"
+      - "traefik.http.services.peikon-transaction.loadbalancer.server.port=8080"
 
   audit-service:
     build:
@@ -591,11 +599,34 @@ services:
       start_period: 20s
     labels:
       - "traefik.enable=true"
+      - "peikon.stack=true"
       - "traefik.docker.network=peikonpurekkusu_edge"
-      - "traefik.http.routers.notifications.rule=Host(`${API_HOST}`) && PathPrefix(`/notifications`)"
-      - "traefik.http.routers.notifications.entrypoints=web"
-      - "traefik.http.routers.notifications.middlewares=security-headers@file,api-ratelimit@file,jwt-auth@file"
-      - "traefik.http.services.notification-service.loadbalancer.server.port=8080"
+      - "traefik.http.routers.peikon-notifications.rule=Host(`${API_HOST}`) && PathPrefix(`/notifications`)"
+      - "traefik.http.routers.peikon-notifications.entrypoints=web"
+      - "traefik.http.routers.peikon-notifications.middlewares=security-headers@file,api-ratelimit@file,jwt-auth@file"
+      - "traefik.http.services.peikon-notification.loadbalancer.server.port=8080"
+
+  frontend:
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
+    restart: unless-stopped
+    networks: [edge]
+    healthcheck:
+      # 127.0.0.1 explicitly: in-container localhost resolves to ::1 first
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8080/healthz >/dev/null 2>&1 || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+    labels:
+      - "traefik.enable=true"
+      - "peikon.stack=true"
+      - "traefik.docker.network=peikonpurekkusu_edge"
+      - "traefik.http.routers.peikon-frontend.rule=Host(`${APP_HOST}`)"
+      - "traefik.http.routers.peikon-frontend.entrypoints=web"
+      - "traefik.http.routers.peikon-frontend.middlewares=security-headers@file"
+      - "traefik.http.services.peikon-frontend.loadbalancer.server.port=8080"
 
   # ── Observability (profile) ────────────────────────────────────────────────
   otel-collector:
