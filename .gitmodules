@@ -1,0 +1,30 @@
+[submodule "services/user-service"]
+	path = services/user-service
+	url = https://github.com/ikarolaborda/peikonpurekkusu-user-service.git
+[submodule "services/account-service"]
+	path = services/account-service
+	url = https://github.com/ikarolaborda/peikonpurekkusu-account-service.git
+[submodule "services/payment-service"]
+	path = services/payment-service
+	url = https://github.com/ikarolaborda/peikonpurekkusu-payment-service.git
+[submodule "services/transaction-service"]
+	path = services/transaction-service
+	url = https://github.com/ikarolaborda/peikonpurekkusu-transaction-service.git
+[submodule "services/fraud-service"]
+	path = services/fraud-service
+	url = https://github.com/ikarolaborda/peikonpurekkusu-fraud-service.git
+[submodule "services/notification-service"]
+	path = services/notification-service
+	url = https://github.com/ikarolaborda/peikonpurekkusu-notification-service.git
+[submodule "services/audit-service"]
+	path = services/audit-service
+	url = https://github.com/ikarolaborda/peikonpurekkusu-audit-service.git
+[submodule "services/mock-psp"]
+	path = services/mock-psp
+	url = https://github.com/ikarolaborda/peikonpurekkusu-mock-psp.git
+[submodule "frontend"]
+	path = frontend
+	url = https://github.com/ikarolaborda/peikonpurekkusu-frontend.git
+[submodule "contracts"]
+	path = contracts
+	url = https://github.com/ikarolaborda/peikonpurekkusu-contracts.git
