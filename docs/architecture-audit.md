@@ -284,9 +284,35 @@ Falsifying the design also surfaced a contract mismatch: the
 `payment-reversed.v1` payload only carries `payment_id` /
 `reversal_ledger_transaction_id` / `reason` (`additionalProperties: false`), so
 the old "map reversed → refund row" path could only ever have produced a refund
-with `amount = 0` and empty user/account **by contract**. Reversed events are now
-parked to their DLQ with an explanatory reason until the refunds contract is
-completed (nothing emits them today; the DLQ keeps them replayable).
+with `amount = 0` and empty user/account **by contract**. Reversed events were
+parked to their DLQ with an explanatory reason until the refunds contract was
+completed.
+
+*The reversed-event consumer is now built (2026-07-11).* `payment-reversed.v1`
+gained `amount_minor_units` + `currency_code`, and transaction-service records a
+refund row instead of parking it. The identity fields the event deliberately does
+not carry (`user_id`/`account_id`/`merchant_id`) are **joined from the original
+purchase row** this service already recorded for the same `payment_id` — the
+projection is the system of record for who a payment belongs to, so the refund
+inherits its attribution rather than trusting a second copy in the event. Amount
+and currency come from the event (partial refunds are honoured — two reversed
+events for one payment produce two refund rows), the ledger id from the event, the
+PSP reference from the original purchase. Fail-closed: a reversed event whose
+purchase is not yet projected is *retryable* (bounded retries, then DLQ, replayable
+once the capture lands — never a partial row); more than one purchase row for a
+payment is poison (immediate DLQ), because attributing a refund by guessing is
+worse than parking it. Idempotent per `event_id`. *Verified live* through Kafka:
+a partial reversal recorded a refund row inheriting the purchase's identity with
+the event's amount; a replay left one row; an unknown payment dead-lettered after
+three attempts with no row written; dotnet 17/17; smoke 18/18.
+
+**Still separate — refund *initiation*.** Nothing emits `payment-reversed.v1`
+today: payment-service has a PSP `Reverse()` but no saga calls it, and the ledger
+has no reversal operation (the account gRPC is Hold/Capture/Release/GetBalance and
+the ledger is append-only). A real refund flow — a refund endpoint, PSP reverse, a
+new `RefundFunds` ledger operation (proto change, merchant-payable → user-liability)
+with B3's capture-ordering discipline, and event emission — is a separate money-core
+feature. The consumer above is ready for it; this item did not build it.
 
 *Verified live*: the identical pre-fix probe now dead-letters naming the missing
 field, zero rows written; a valid probe lands with the right amount; with the
@@ -346,8 +372,18 @@ rejected the old-kid token and shrank the JWKS. Unit 14/14 (real ES256
 signatures — the jest jose stub was an empty object and would have made these
 tests fake; jest now transforms the real library). Smoke 18/18.
 
-Deferred follow-up: an SPA one-shot 401→refresh→retry interceptor would close
-the "fails until next navigation" gap for ordinary token expiry too.
+Deferred follow-up *(now done)*: an SPA one-shot 401→refresh→retry interceptor
+closes the "fails until next navigation" gap for ordinary token expiry. When the
+access-token cookie expires mid-page the gateway returns 401 *before* the request
+reaches any service, so the request never executed and replaying it (even a
+mutation) is safe. `authRetryInterceptor` runs before the credentials interceptor,
+silently refreshes once, and replays the request with the freshly-rotated CSRF.
+Concurrent 401s share a single refresh via `SessionStore.sharedRefresh()` (the
+in-flight promise is assigned synchronously before the first await) — the refresh
+token is single-use rotating, so a second concurrent refresh would be treated as
+reuse and revoke the whole family. A one-shot `HttpContext` guard prevents loops;
+`/auth/*` is skipped. Proven by 5 Vitest specs, including "3 concurrent 401s →
+exactly one refresh".
 
 **audit-service is deliberately excluded.** It is the system of record for
 what actually flowed on the wire — including the drifted traffic the business
