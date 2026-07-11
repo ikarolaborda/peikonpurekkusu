@@ -479,9 +479,29 @@ the short TTL is the bound. *Operational note*: editing
 `infra/traefik/dynamic.yml` requires `docker compose restart traefik` for a new
 `authResponseHeaders` entry to propagate — file-watch did not reload it here.
 
-MFA enrollment itself has no self-service UI yet (the flag is set directly in the
-database). The enforcement, challenge delivery and verification all work; what is
-missing is the "turn on MFA" screen.
+**MFA self-enrollment now has a UI.** Previously `mfaEnrolled` was set directly
+in the database — enforcement, challenge delivery and verification all worked,
+but there was no "turn on MFA" screen. Enrollment is a two-step flow so the flag
+flips only after the user proves they can receive a code (enabling MFA against a
+channel that cannot deliver would lock them out of their next login):
+`POST /auth/mfa/enroll/start` delivers a code, `POST /auth/mfa/enroll/confirm`
+verifies it and consumes it (no replay) before setting the flag.
+`POST /auth/mfa/disable` is gated on a session that has actually completed MFA
+(`amr` includes `mfa`), so a password-only session — which `AuthGuard` still lets
+through so mfa-verify and logout work — cannot turn the control off. Enrollment
+deliberately does **not** elevate the session: proving deliverability to enable
+the feature is setup, not a step-up, and must not satisfy a payment freshness
+check. The frontend gains an MFA card in the Security view. No self-lockout: the
+current session stays valid (`mfaPending` is set at login, before enrollment);
+only the next login asks for the second factor.
+
+*Verified live through the gateway*: enrol → next login returns
+`mfa_required: true` → a password-only session is 401 on protected routes →
+completing the challenge elevates it → disable returns to `mfa_required: false`;
+wrong code 401, disable from a password-only session 403. user-service jest 19/19
+(5 new). The in-browser UI click-through was blocked (the automation browser
+could not reach the local stack), so the acceptance evidence is the API-level
+customer flow, not a screen recording.
 
 ## Build coupling — resolved
 
