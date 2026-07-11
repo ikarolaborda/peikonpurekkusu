@@ -71,6 +71,12 @@ public sealed class DeepAnalysisConsumer(IServiceScopeFactory scopes, IProducer<
                 await HandleAsync(result, ct);
                 return true;
             }
+            catch (PoisonEventException ex)
+            {
+                // Retrying cannot fix it, and the DLQ result decides the offset:
+                // discarding it here would drop the message when the DLQ write fails.
+                return await DeadLetterAsync(result, ex.InnerException ?? ex, ct);
+            }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
                 last = ex;
@@ -87,8 +93,7 @@ public sealed class DeepAnalysisConsumer(IServiceScopeFactory scopes, IProducer<
         var envelope = EventsCodec.TryUnframe(result.Message.Value);
         if (envelope is null || !Guid.TryParse(envelope.EventId, out var eventId))
         {
-            await DeadLetterAsync(result, new FormatException("unparseable envelope"), ct);
-            return;
+            throw new PoisonEventException(new FormatException("unparseable envelope"));
         }
 
         await using var scope = scopes.CreateAsyncScope();
@@ -100,10 +105,12 @@ public sealed class DeepAnalysisConsumer(IServiceScopeFactory scopes, IProducer<
         {
             await db.SaveChangesAsync(ct);
         }
-        catch (DbUpdateException) // duplicate event_id → already processed
+        catch (DbUpdateException ex) when (ex.IsUniqueViolation())
         {
-            return;
+            return; // genuinely already processed
         }
+        // Any other DbUpdateException (deadlock, timeout, broken connection) is a
+        // real failure: let it bubble so the event is retried, not silently acked.
 
         var userId = (string?)envelope.Payload["user_id"] ?? "";
         var paymentId = (string?)envelope.Payload["payment_id"] ?? "";

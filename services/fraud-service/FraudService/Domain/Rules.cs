@@ -92,15 +92,29 @@ public sealed class GeoMismatchRule(IVelocityStore store) : IFraudRule
     }
 }
 
-public sealed class DenylistRule(IVelocityStore store, OutagePolicy outage) : IFraudRule
+public sealed class DenylistRule(IVelocityStore store) : IFraudRule
 {
     public string Name => "denylist";
     public int Priority => 5; // cheapest hard signal runs first
 
+    /// <summary>
+    /// Forces step-up when the denylist cannot be read, independent of amount.
+    /// The generic amount-tiered outage policy is wrong for this rule: it scores
+    /// a small payment at 10, which clears the approve threshold, so a Redis blip
+    /// would wave a known-denylisted user straight through. An unreadable denylist
+    /// means "cannot clear this user", never "user is fine". Step-up (not hard
+    /// deny) keeps a Redis outage from taking all payments down with it.
+    /// </summary>
+    private const int UnreadableDenylistScore = 65;
+
     public async ValueTask<RuleOutcome> EvaluateAsync(FraudContext ctx, CancellationToken ct)
     {
         var listed = await store.IsDenylistedAsync(ctx.UserId, ct);
-        if (listed is null) return outage.OnUnavailable(Name, ctx);
+        if (listed is null)
+        {
+            return new RuleOutcome(Name, UnreadableDenylistScore,
+                "denylist unreadable — cannot clear user, forcing step-up");
+        }
         return listed.Value
             ? new RuleOutcome(Name, 100, "user denylisted", HardDeny: true)
             : new RuleOutcome(Name, 0, "not listed");

@@ -49,7 +49,7 @@ var outagePolicy = new OutagePolicy(long.Parse(Env("FRAUD_FAIL_CLOSED_THRESHOLD"
 var mlEnabled = Env("FRAUD_ML_ENABLED", "false") == "true";
 builder.Services.AddSingleton(outagePolicy);
 builder.Services.AddSingleton<IFraudScorer, HeuristicScorer>();
-builder.Services.AddSingleton<IFraudRule>(sp => new DenylistRule(sp.GetRequiredService<IVelocityStore>(), outagePolicy));
+builder.Services.AddSingleton<IFraudRule>(sp => new DenylistRule(sp.GetRequiredService<IVelocityStore>()));
 builder.Services.AddSingleton<IFraudRule>(sp => new VelocityCountRule(sp.GetRequiredService<IVelocityStore>(), outagePolicy));
 builder.Services.AddSingleton<IFraudRule>(sp => new VelocityAmountRule(sp.GetRequiredService<IVelocityStore>(), outagePolicy));
 builder.Services.AddSingleton<IFraudRule>(_ => new AmountTierRule());

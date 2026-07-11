@@ -1,4 +1,5 @@
 using Peikon.Fraud.Domain;
+using Peikon.Fraud.Infrastructure;
 using Xunit;
 
 namespace Peikon.Fraud.Tests;
@@ -79,6 +80,56 @@ public class RulePipelineTests
         ], new DecisionPolicy());
         var result = await pipeline.EvaluateAsync(Ctx(), CancellationToken.None);
         Assert.Equal(100, result.RiskScore);
+    }
+}
+
+file sealed class StubVelocityStore(bool? denylisted) : IVelocityStore
+{
+    public Task<(long Count, long AmountSum)?> RecordAndCountAsync(string accountId, string paymentId,
+        long amountMinorUnits, DateTimeOffset eventTime, TimeSpan window, CancellationToken ct) =>
+        Task.FromResult<(long, long)?>(null);
+
+    public Task<bool?> IsDenylistedAsync(string userId, CancellationToken ct) =>
+        Task.FromResult(denylisted);
+
+    public Task<string[]?> RecentCountriesAsync(string userId, string currentCountry, CancellationToken ct) =>
+        Task.FromResult<string[]?>(null);
+}
+
+public class DenylistRuleTests
+{
+    private static FraudContext Ctx(long amount) => new(
+        "p1", "u1", "a1", amount, "USD", "m-books", "card", "PT", DateTimeOffset.UtcNow);
+
+    [Theory]
+    [InlineData(1)]      // a small amount must not buy a free pass
+    [InlineData(4999)]   // just under the generic fail-open threshold
+    [InlineData(500_000)]
+    public async Task Unreadable_denylist_forces_step_up_at_any_amount(long amount)
+    {
+        var rule = new DenylistRule(new StubVelocityStore(denylisted: null));
+
+        var outcome = await rule.EvaluateAsync(Ctx(amount), CancellationToken.None);
+
+        Assert.True(outcome.ScoreDelta >= 60,
+            "an unreadable denylist cannot clear a user — it must force step-up, never approve");
+    }
+
+    [Fact]
+    public async Task Listed_user_is_hard_denied()
+    {
+        var rule = new DenylistRule(new StubVelocityStore(denylisted: true));
+        var outcome = await rule.EvaluateAsync(Ctx(1000), CancellationToken.None);
+        Assert.True(outcome.HardDeny);
+    }
+
+    [Fact]
+    public async Task Cleared_user_scores_zero()
+    {
+        var rule = new DenylistRule(new StubVelocityStore(denylisted: false));
+        var outcome = await rule.EvaluateAsync(Ctx(1000), CancellationToken.None);
+        Assert.Equal(0, outcome.ScoreDelta);
+        Assert.False(outcome.HardDeny);
     }
 }
 

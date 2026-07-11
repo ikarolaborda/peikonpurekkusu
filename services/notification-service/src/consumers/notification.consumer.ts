@@ -5,7 +5,7 @@ import { KafkaJS } from '@confluentinc/kafka-javascript';
 import { DeliveryAttempt } from '../entities/delivery-attempt.entity.js';
 import { Notification } from '../entities/notification.entity.js';
 import { CHANNEL_STRATEGIES, type ChannelStrategy } from '../channels/channel.strategy.js';
-import { SseHub } from '../notifications/sse-hub.service.js';
+import { SseHub, type LiveNotification } from '../notifications/sse-hub.service.js';
 import { TemplateRegistry } from '../templating/templates.js';
 import { unframe } from '../messaging/wire.js';
 
@@ -114,7 +114,13 @@ export class NotificationConsumer implements OnModuleInit, OnModuleDestroy {
       } catch (err) {
         this.logger.warn(`handle failed (attempt ${attempt}): ${(err as Error).message}`);
         if (attempt >= 3) {
-          await this.deadLetter(topic, partition, message, err as Error);
+          const deadLettered = await this.deadLetter(topic, partition, message, err as Error);
+          // Commit only once the message is durably parked in the DLQ. Committing
+          // after a failed DLQ write would advance past an event stored nowhere.
+          if (!deadLettered) {
+            this.logger.error(`offset held for redelivery: ${topic}@${message.offset}`);
+            return;
+          }
           await this.consumer.commitOffsets([
             { topic, partition, offset: (Number(message.offset) + 1).toString() },
           ]);
@@ -130,6 +136,7 @@ export class NotificationConsumer implements OnModuleInit, OnModuleDestroy {
     if (!userId) return;
     const rendered = this.templates.render(route.template, route.map(env.payload));
 
+    let toPublish: LiveNotification | null = null;
     const em = this.orm.em.fork();
     await em.transactional(async (tem) => {
       // Idempotency gate: insert-or-skip in the same tx as the effect.
@@ -175,19 +182,25 @@ export class NotificationConsumer implements OnModuleInit, OnModuleDestroy {
         }
       }
 
-      // Push to any live SSE subscriber for this user.
-      this.hub.publish({
+      // Staged, not published: emitting inside the transaction would show the
+      // subscriber a notification that a failed commit then rolls back.
+      toPublish = {
         userId,
         id: notification.id,
         title: rendered.title,
         body: rendered.body,
         channel: 'inapp',
         createdAt: new Date().toISOString(),
-      });
+      };
     });
+
+    if (toPublish) {
+      this.hub.publish(toPublish);
+    }
   }
 
-  private async deadLetter(topic: string, partition: number, message: ConsumedMessage, cause: Error): Promise<void> {
+  /** @returns true when the message is durably in the DLQ (safe to commit the offset). */
+  private async deadLetter(topic: string, partition: number, message: ConsumedMessage, cause: Error): Promise<boolean> {
     try {
       await this.producer.send({
         topic: `${GROUP}.${topic}.dlq`,
@@ -207,8 +220,10 @@ export class NotificationConsumer implements OnModuleInit, OnModuleDestroy {
         ],
       });
       this.logger.warn(`dead-lettered ${topic}@${message.offset}: ${cause.message}`);
+      return true;
     } catch (err) {
-      this.logger.error(`DLQ publish failed — message dropped: ${(err as Error).message}`);
+      this.logger.error(`DLQ publish failed: ${(err as Error).message}`);
+      return false;
     }
   }
 }
