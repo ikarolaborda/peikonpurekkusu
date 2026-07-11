@@ -256,11 +256,53 @@ processor already collected.
 **before** — `succeeded / captured`, customer debited 1577; **after** — `failed /
 gateway_capture_failed`, balance restored to 0 delta. Smoke stayed 18/18.
 
+**B5 — consumed payloads are now validated against the producer's schema
+(transaction-service).** Previously `PaymentFactsConsumer` read every payload
+field with `?? ""` / `?? 0` fallbacks, so a drifted producer wrote a permanent
+zero-amount row into the immutable `transactions` table. Observed live before
+fixing: a framed `payment.captured.v1` missing `amount_minor_units` produced an
+`amount = 0` purchase row with no error anywhere.
+
+The consumer now validates the payload against the **schema id embedded in the
+frame**, fetched from Apicurio and cached compiled (ids are immutable). Validating
+by the producer's id rather than a build-time schema copy matters because the
+schemas use `additionalProperties: false`: an embedded copy would dead-letter
+valid traffic the moment a producer legitimately adds a field, whereas the frame's
+id always names the exact contract the producer wrote to.
+
+Failure classes are deliberately split three ways: a **schema-invalid payload**
+or an **authoritatively unknown schema id** is poison — parked in the existing
+durable DLQ path with the failing keyword in `x-exception`; a **registry outage**
+(network, timeout, 5xx) is transient — the consumer *seeks back* to the failed
+offset and blocks. The seek is load-bearing: without it, the next record's stored
+offset would commit past the held message and the unvalidated event would be
+silently skipped. Liveness is traded for never writing an unvalidated money fact.
+Formats (`uuid`, `date-time`) are not yet enforced — types, required fields and
+shape are; format enforcement waits until producer traffic has been sampled.
+
+Falsifying the design also surfaced a contract mismatch: the
+`payment-reversed.v1` payload only carries `payment_id` /
+`reversal_ledger_transaction_id` / `reason` (`additionalProperties: false`), so
+the old "map reversed → refund row" path could only ever have produced a refund
+with `amount = 0` and empty user/account **by contract**. Reversed events are now
+parked to their DLQ with an explanatory reason until the refunds contract is
+completed (nothing emits them today; the DLQ keeps them replayable).
+
+*Verified live*: the identical pre-fix probe now dead-letters naming the missing
+field, zero rows written; a valid probe lands with the right amount; with the
+registry stopped and a cold cache, two events published mid-outage were held
+(eight retry cycles, nothing dead-lettered) and both landed in order after
+restart. Unit 14/14, smoke 18/18.
+
+Only transaction-service is covered; the other four consumers still read with
+fallbacks and take the same transplant pattern (validator + poison/transient
+split + seek-back).
+
 ### Still open, ranked
 
 | # | Severity | Issue |
 |---|---|---|
-| B5 | Medium | **No runtime contract validation.** Consumers read payload fields by string key with `?? ""` / `?? 0` fallbacks. Producer drift writes a zero-amount row into an append-only table that cannot be corrected in place. Fix: validate against `contracts/events/*.schema.json` on consume. |
+| B5b | Medium | **Contract validation covers only transaction-service.** The other four consumers (payment-service ×2 Go, fraud-service .NET, notification-service Nest) still read payload fields with fallbacks. Transplant the B5 pattern: validate by the frame's schema id, poison/transient split, seek-back hold. |
 | B6 | Medium | **`kid` rotation is not implemented.** A single key is loaded and published; rotating it invalidates every outstanding token at once (fleet-wide logout) rather than overlapping old and new. |
 | B7 | Medium | **Fraud deep-analysis reads a lossy store.** `fraud_logs` is a `DropOldest` bounded channel, and the daily-volume threshold sums it — so the control weakens precisely under the burst it exists to detect. |
 | B8 | Low | **Header trust has no enforcement.** `X-User-Id` is unspoofable from outside (Traefik overwrites it), but any workload on the internal network can call a service directly and impersonate a user. Lateral-movement only. Fix: mTLS or a signed gateway assertion. |
