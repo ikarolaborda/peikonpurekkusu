@@ -316,6 +316,39 @@ record; Node (confluent kafka-javascript, librdkafka underneath) blocks inside
 an outage longer than that means eviction and uncommitted replay, which is
 safe because every consumer is idempotent.
 
+**B6 — signing-key rotation no longer disturbs live sessions.** First, an
+honest correction: the backlog described rotation as a "fleet-wide logout",
+and the live falsifier showed that was **overstated** — refresh tokens are
+opaque Postgres rows and sessions live in Redis, so rotating the PEM 401'd
+outstanding *access* tokens (≤10-min TTL) but `/auth/refresh` recovered the
+same session without re-login. The true pre-fix impact: failing API calls
+until the client refreshes — and the SPA only refreshes in its route guard,
+so in-page calls failed until the next navigation.
+
+The fix is a key ring in user-service (the platform's only JWT verifier —
+downstream services trust ForwardAuth headers, never tokens): one current
+signer (existing `JWT_PRIVATE_KEY_PATH`/`JWT_KID_PATH`, so single-key deploys
+work unchanged) plus retired **public** keys in `JWT_RETIRED_KEYS_DIR/<kid>.pem`
+— retired private keys are never kept. Verification selects by the token's
+`kid` (cached local JWKS; the old per-verify key import went away with it);
+a missing, unknown, or colliding `kid` fails closed, and boot refuses
+duplicate kids, malformed kid stems, and non-P-256 keys. The JWKS endpoint
+serves the whole ring. `scripts/rotate-keys.sh` is the runbook: retire the
+old public pem, install the new pair, restart; **delete the retired file once
+`ACCESS_TOKEN_TTL` has passed** — leaving it longer extends acceptance of
+already-issued old tokens (never forgery), and removal requires the restart
+to take effect.
+
+*Verified live*: the identical rotation that 401'd a pre-rotation session on
+the old build kept it at 200 on the new one, with both kids in the JWKS; a
+fresh login signed with the new kid; deleting the retired pem then correctly
+rejected the old-kid token and shrank the JWKS. Unit 14/14 (real ES256
+signatures — the jest jose stub was an empty object and would have made these
+tests fake; jest now transforms the real library). Smoke 18/18.
+
+Deferred follow-up: an SPA one-shot 401→refresh→retry interceptor would close
+the "fails until next navigation" gap for ordinary token expiry too.
+
 **audit-service is deliberately excluded.** It is the system of record for
 what actually flowed on the wire — including the drifted traffic the business
 consumers dead-letter. Validating there would erase the evidence; its DLQ'd
@@ -328,7 +361,6 @@ correctness.
 | # | Severity | Issue |
 |---|---|---|
 | B5b | Medium | **Contract validation covers only transaction-service.** The other four consumers (payment-service ×2 Go, fraud-service .NET, notification-service Nest) still read payload fields with fallbacks. Transplant the B5 pattern: validate by the frame's schema id, poison/transient split, seek-back hold. |
-| B6 | Medium | **`kid` rotation is not implemented.** A single key is loaded and published; rotating it invalidates every outstanding token at once (fleet-wide logout) rather than overlapping old and new. |
 | B7 | Medium | **Fraud deep-analysis reads a lossy store.** `fraud_logs` is a `DropOldest` bounded channel, and the daily-volume threshold sums it — so the control weakens precisely under the burst it exists to detect. |
 | B8 | Low | **Header trust has no enforcement.** `X-User-Id` is unspoofable from outside (Traefik overwrites it), but any workload on the internal network can call a service directly and impersonate a user. Lateral-movement only. Fix: mTLS or a signed gateway assertion. |
 | B10 | Low | Hygiene: the topic list is maintained by hand in three places (`contracts/events/topics.json`, `infra/kafka/create-topics.sh`, audit-service's `AllTopics`) — a drift trap; DLQ topics are outside the versioned contract. |

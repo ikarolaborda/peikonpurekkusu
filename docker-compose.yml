@@ -334,6 +334,7 @@ services:
       ACCESS_TOKEN_TTL: ${ACCESS_TOKEN_TTL}
       REFRESH_TOKEN_TTL: ${REFRESH_TOKEN_TTL}
       JWT_PRIVATE_KEY_PATH: /secrets/jwt-es256-private.pem
+      JWT_RETIRED_KEYS_DIR: /secrets/retired-jwt-keys
       JWT_KID_PATH: /secrets/jwt-es256.kid
       COOKIE_ACCESS_NAME: ${COOKIE_ACCESS_NAME:-__Host-at}
       COOKIE_REFRESH_NAME: ${COOKIE_REFRESH_NAME:-__Secure-rt}
