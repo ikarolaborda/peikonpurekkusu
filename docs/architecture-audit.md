@@ -152,11 +152,50 @@ ordinary one still succeeds; an MFA-enrolled user's password-only session gets 4
 on `/users/me`, `/accounts` and `/transactions`, and after submitting the correct
 code the same session gets 200.
 
+**B3 — the ledger no longer records a capture the processor did not make.**
+`stepCapture` moved user liability → merchant payable, *then* called the PSP, and
+if that capture failed it only logged the error and still marked the payment
+`succeeded`. The customer was told it worked and the merchant was credited for
+money the card network never collected.
+
+The instinctive fix — undo the ledger — is the wrong shape, and checking it first
+is what redirected the design: there **is** no reversal path (the account gRPC is
+`Hold`/`Capture`/`Release`/`GetBalance`, and the ledger is deliberately
+append-only), so building one meant a proto change plus a new operation in the
+money core. But the undo is only needed because we recorded the capture *before*
+it happened. The ledger is the record of what happened to the money; posting a
+capture the processor has not confirmed asserts a fact that has not occurred.
+
+So the order is inverted: capture at the processor, checkpoint that durably as
+`step='psp_captured'`, and only then post it to the ledger. Compensation becomes
+trivial — if the processor refuses, no ledger movement has happened, so releasing
+the still-active hold is the *entire* correction, using machinery that already
+existed.
+
+The sweepers respect the asymmetry, which is the part that would bite if it were
+got wrong: `ExpireStuckCaptures` only sees payments whose capture is **not yet
+confirmed** (hold intact, safe to release). A payment past `psp_captured` is
+**never** auto-compensated — releasing that hold would refund money the network
+already took. It is retried instead (the ledger capture is idempotent on a
+deterministic request id, so it converges), and `AlertStalledLedgerCaptures`
+makes it loud rather than silent if it lingers.
+
+*Residual, stated honestly:* capturing externally first opens a window where the
+processor has the money and our books do not yet say so. That is strictly better
+than the bug it replaces — it is non-terminal, visible, self-healing, and its
+worst case is "our own database is down", not "we credited a merchant for money
+that never arrived". A true settlement reconciliation against PSP reports is the
+proper safety net on top; it is **not** built, because the mock PSP exposes no
+settlement report to reconcile against, and inventing one would be theatre.
+
+*Verified live* with an injected capture rejection, through the real payment flow:
+**before** — `succeeded / captured`, customer debited 1577; **after** — `failed /
+gateway_capture_failed`, balance restored to 0 delta. Smoke stayed 18/18.
+
 ### Still open, ranked
 
 | # | Severity | Issue |
 |---|---|---|
-| B3 | Medium | **Ledger capture precedes PSP capture.** If the PSP capture fails after the ledger already moved the money, the failure is only logged — ledger and PSP diverge with no automated compensation. Fix: reversing entries on PSP capture failure + a settlement reconciliation job. |
 | B5 | Medium | **No runtime contract validation.** Consumers read payload fields by string key with `?? ""` / `?? 0` fallbacks. Producer drift writes a zero-amount row into an append-only table that cannot be corrected in place. Fix: validate against `contracts/events/*.schema.json` on consume. |
 | B6 | Medium | **`kid` rotation is not implemented.** A single key is loaded and published; rotating it invalidates every outstanding token at once (fleet-wide logout) rather than overlapping old and new. |
 | B7 | Medium | **Fraud deep-analysis reads a lossy store.** `fraud_logs` is a `DropOldest` bounded channel, and the daily-volume threshold sums it — so the control weakens precisely under the burst it exists to detect. |
