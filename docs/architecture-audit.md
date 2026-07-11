@@ -294,9 +294,34 @@ registry stopped and a cold cache, two events published mid-outage were held
 (eight retry cycles, nothing dead-lettered) and both landed in order after
 restart. Unit 14/14, smoke 18/18.
 
-Only transaction-service is covered; the other four consumers still read with
-fallbacks and take the same transplant pattern (validator + poison/transient
-split + seek-back).
+**B5b — the pattern now covers every business consumer.** What the pre-fix
+probes showed on the others: fraud-service silently accepted the same drifted
+capture events (`amount ?? 0` feeding the daily-volume control — the control
+under-counts exactly when a producer drifts); notification-service rendered
+**"Your payment of 0.00 EUR … was captured"** to the user from a drifted
+payload, and silently *skipped and committed* an event missing `user_id` (no
+DLQ, no log line — unfindable); account-service burned its retry budget and
+dead-lettered (fail-closed but noisy and unnamed); payment-service's wallet
+consumer read `outcome` with a `""` fallback, so a drifted `psp.completed`
+would have been treated as a **decline** (Tier-1 code fact; staging an
+in-flight wallet payment mid-cycle was not affordable, so the acceptance gate
+is the post-fix probe showing such events dead-letter).
+
+The hold mechanics are per-runtime, because the offset semantics differ:
+.NET (Confluent client) seeks back to the failed offset; Go (franz-go, batch
+commit) **blocks inside the handler** — the batch loop is synchronous, so a
+blocked handler structurally prevents any later commit from skipping the held
+record; Node (confluent kafka-javascript, librdkafka underneath) blocks inside
+`eachMessage` with background heartbeats, bounded by `max.poll.interval.ms` —
+an outage longer than that means eviction and uncommitted replay, which is
+safe because every consumer is idempotent.
+
+**audit-service is deliberately excluded.** It is the system of record for
+what actually flowed on the wire — including the drifted traffic the business
+consumers dead-letter. Validating there would erase the evidence; its DLQ'd
+siblings are diagnosed *from* the audit rows. The exclusion is a policy, not
+an omission: audit-service must never be read as a statement of contract
+correctness.
 
 ### Still open, ranked
 
