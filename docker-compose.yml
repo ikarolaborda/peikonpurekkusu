@@ -306,8 +306,7 @@ services:
   user-service:
     mem_limit: 320m
     build:
-      context: .
-      dockerfile: services/user-service/Dockerfile
+      context: ./services/user-service
     restart: unless-stopped
     networks: [edge, internal]
     depends_on:
@@ -366,8 +365,7 @@ services:
   account-service:
     mem_limit: 128m
     build:
-      context: .
-      dockerfile: services/account-service/Dockerfile
+      context: ./services/account-service
     restart: unless-stopped
     networks: [edge, internal]
     depends_on:
@@ -412,8 +410,7 @@ services:
   mock-psp:
     mem_limit: 64m
     build:
-      context: .
-      dockerfile: services/mock-psp/Dockerfile
+      context: ./services/mock-psp
     restart: unless-stopped
     networks: [internal]
     depends_on:
@@ -436,8 +433,7 @@ services:
   payment-service:
     mem_limit: 128m
     build:
-      context: .
-      dockerfile: services/payment-service/Dockerfile
+      context: ./services/payment-service
     restart: unless-stopped
     networks: [edge, internal]
     depends_on:
@@ -481,8 +477,7 @@ services:
   fraud-service:
     mem_limit: 320m
     build:
-      context: .
-      dockerfile: services/fraud-service/Dockerfile
+      context: ./services/fraud-service
     restart: unless-stopped
     networks: [internal]
     depends_on:
@@ -517,8 +512,7 @@ services:
   transaction-service:
     mem_limit: 320m
     build:
-      context: .
-      dockerfile: services/transaction-service/Dockerfile
+      context: ./services/transaction-service
     restart: unless-stopped
     networks: [edge, internal]
     depends_on:
@@ -554,8 +548,7 @@ services:
   audit-service:
     mem_limit: 128m
     build:
-      context: .
-      dockerfile: services/audit-service/Dockerfile
+      context: ./services/audit-service
     restart: unless-stopped
     networks: [internal]
     depends_on:
@@ -586,8 +579,7 @@ services:
   notification-service:
     mem_limit: 320m
     build:
-      context: .
-      dockerfile: services/notification-service/Dockerfile
+      context: ./services/notification-service
     restart: unless-stopped
     networks: [edge, internal]
     depends_on:
@@ -623,8 +615,7 @@ services:
   frontend:
     mem_limit: 64m
     build:
-      context: .
-      dockerfile: frontend/Dockerfile
+      context: ./frontend
     restart: unless-stopped
     networks: [edge]
     healthcheck:
