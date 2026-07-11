@@ -54,15 +54,30 @@ config, scripts and documentation, and mounts every deliverable as a **git submo
 | `frontend` | [peikonpurekkusu-frontend](https://github.com/ikarolaborda/peikonpurekkusu-frontend) | Angular 22 + Tailwind 4 |
 | `contracts` | [peikonpurekkusu-contracts](https://github.com/ikarolaborda/peikonpurekkusu-contracts) | Event schemas, protobufs, generated stubs |
 
-Clone with submodules and always build/run from here — the Docker build contexts
-and the `contracts/gen` path dependencies (Go `replace`, C# `Compile Include`)
-resolve against this repo's root:
-
 ```bash
 git clone --recurse-submodules https://github.com/ikarolaborda/peikonpurekkusu.git
 # or, after a plain clone:
 git submodule update --init --recursive
 ```
+
+### Every service builds on its own
+
+The aggregator owns the *topology*, not the code. It supplies nothing to a service
+build: each Docker build context is the component's own directory, and no service
+copies a file from outside its own repository. Clone any service repo by itself and
+it builds — no aggregator required.
+
+Contracts are consumed **by version**, not by relative path:
+
+| Consumer | How it gets contracts |
+|---|---|
+| account-service, payment-service (Go) | `require github.com/ikarolaborda/peikonpurekkusu-contracts/gen/go v1.0.0` — resolved from the public module proxy. No `replace`, no registry to run. |
+| fraud-service (.NET) | `contracts` is a submodule of *that* repo; `FraudService` references the `Peikon.Contracts` library project. Becomes a one-line `PackageReference` once the package is pushed to nuget.org. |
+| transaction, user, notification, audit, mock-psp, frontend | No contract dependency — they carry their own wire codecs. |
+
+The Kafka event schemas in `contracts/events` are consumed at *runtime* by the
+aggregator's `schemas-init` job (it registers them with Apicurio), which is why
+`contracts` is still mounted here as well.
 
 ## Architecture
 

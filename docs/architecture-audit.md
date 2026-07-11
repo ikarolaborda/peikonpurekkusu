@@ -124,7 +124,33 @@ and rushing them into a working stack trades one class of defect for another.
 | B7 | Medium | **Fraud deep-analysis reads a lossy store.** `fraud_logs` is a `DropOldest` bounded channel, and the daily-volume threshold sums it — so the control weakens precisely under the burst it exists to detect. |
 | B8 | Low | **Header trust has no enforcement.** `X-User-Id` is unspoofable from outside (Traefik overwrites it), but any workload on the internal network can call a service directly and impersonate a user. Lateral-movement only. Fix: mTLS or a signed gateway assertion. |
 | B9 | Low | Idempotency records have no `recovery_point` (documented but absent) and no staleness check on `locked_at` — a crash mid-request pins that key to 409 for its full 24 h TTL. |
-| B10 | Low | Hygiene: `MOCK_PSP_DECLINE_RATE` is inert (declines are hard-coded deterministic); the topic list is maintained by hand in three places; `otel-collector` has no memory cap or healthcheck; DLQ topics are outside the versioned contract. |
+| B10 | Low | Hygiene: the topic list is maintained by hand in three places (`contracts/events/topics.json`, `infra/kafka/create-topics.sh`, audit-service's `AllTopics`) — a drift trap; DLQ topics are outside the versioned contract. *(The inert `MOCK_PSP_DECLINE_RATE` knob and the uncapped `otel-collector` are now fixed.)* |
+
+## Build coupling — resolved
+
+The sweep flagged that three services could not be built without the aggregator
+checked out around them: account-service and payment-service reached out through a
+`replace github.com/peikonpurekkusu/contracts/gen/go => ../../contracts/gen/go`
+(pointing at a module path whose GitHub org does not even exist — it *only* ever
+resolved through the relative path), and fraud-service spliced in C# source with a
+`Compile Include="../../../contracts/gen/csharp/Fraud.cs"`.
+
+Contracts are now consumed **by version**:
+
+- **Go** — `gen/go` is published as a real module at the path that matches its
+  repository, released with the directory-prefixed tag `gen/go/v1.0.0` (Go's
+  convention for a module in a subdirectory). Both services now
+  `require .../peikonpurekkusu-contracts/gen/go v1.0.0` with **no `replace`**.
+  Go's publishing model is decentralized, so this needs no registry at all.
+- **.NET** — the stubs are a `Peikon.Contracts` class library. fraud-service carries
+  `contracts` as its own submodule and takes a `ProjectReference`. The project is
+  package-shaped, so publishing to nuget.org later turns this into a one-line
+  `PackageReference`. GitHub Packages was rejected: its NuGet feed demands
+  authentication even to restore a *public* package, which would break clean builds.
+
+Every Docker build context is now the component's own directory. Verified by cloning
+payment-service, account-service and fraud-service **standalone, with no aggregator
+present**, and building each (fraud-service's image builds and runs its tests inside).
 
 ## Docs corrected
 
