@@ -356,12 +356,50 @@ siblings are diagnosed *from* the audit rows. The exclusion is a policy, not
 an omission: audit-service must never be read as a statement of contract
 correctness.
 
+**B7 — the fraud volume control no longer reads a lossy store.** The live
+falsifier confirmed the audited severity exactly: with the fraud DB slowed
+(paused) under a 3 000-call scoring burst, 936 entries (31%) were evicted from
+the `DropOldest` channel **silently** — the existing "channel full" warning was
+dead code, because under `DropOldest` the eviction happens *inside* `TryWrite`,
+which then reports success. The daily-volume query summed 309 750 minor units
+while true captured volume was 450 150 — 12% over the 400 000 threshold — and
+no flag was emitted. The control weakened precisely under the burst it exists
+to detect. A second defect rode along: the query summed *all scored attempts*
+(including denies) from `features_snapshot`, not captured amounts.
+
+The fix separates the two concerns the old design conflated. The control now
+reads a durable `daily_volumes` aggregate (`user_id`, event-time UTC `day`,
+`total_minor_units`) fed **exclusively** by `payments.payment.captured.v1`
+inside DeepAnalysisConsumer's existing dedup transaction — the upsert commits
+iff the `processed_events` insert commits, so each capture counts exactly
+once, and the threshold compares the post-upsert total (the conflict-row lock
+serializes concurrent evaluators; the upsert and read are split statements
+because Postgres only allows data-modifying CTEs at top level and EF's
+`SqlQuery` composes an outer SELECT). `fraud_logs` is now **observability-only
+by policy**: `DropOldest` stays — scoring availability beats log completeness
+on a ~150 ms hot path — but evictions are finally visible via the channel's
+`itemDropped` callback (counter + sampled warnings).
+
+*Verified live*: post-fix, 3 × 150 000 captured events produced one flag row
+exactly at the crossing (detail names 450 000); replaying the same `event_id`
+left the total and flag count unchanged; the same paused-DB burst that was
+silent pre-fix now logs its evictions, and scoring stayed 3000/3000 available
+throughout. Unit 26/26 in-container; smoke 18/18.
+
+Operational notes: schema is `EnsureCreated`, which does **not** evolve an
+existing database — `daily_volumes` was created by hand on the live DB and any
+new environment needs the same DDL or a fresh volume; if the table is missing
+the consumer fails loudly on first capture (relation-not-found → retry → DLQ),
+never silently. No backfill: the aggregate starts empty mid-day and converges
+within one UTC day (a backfill from `fraud_logs` would launder lossy data into
+the durable control). Residuals: multi-replica concurrency is reasoned from
+row-lock semantics, not live-tested (single replica today); day bucketing is
+event-time UTC, so late replays land on the day the capture occurred.
+
 ### Still open, ranked
 
 | # | Severity | Issue |
 |---|---|---|
-| B5b | Medium | **Contract validation covers only transaction-service.** The other four consumers (payment-service ×2 Go, fraud-service .NET, notification-service Nest) still read payload fields with fallbacks. Transplant the B5 pattern: validate by the frame's schema id, poison/transient split, seek-back hold. |
-| B7 | Medium | **Fraud deep-analysis reads a lossy store.** `fraud_logs` is a `DropOldest` bounded channel, and the daily-volume threshold sums it — so the control weakens precisely under the burst it exists to detect. |
 | B8 | Low | **Header trust has no enforcement.** `X-User-Id` is unspoofable from outside (Traefik overwrites it), but any workload on the internal network can call a service directly and impersonate a user. Lateral-movement only. Fix: mTLS or a signed gateway assertion. |
 | B10 | Low | Hygiene: the topic list is maintained by hand in three places (`contracts/events/topics.json`, `infra/kafka/create-topics.sh`, audit-service's `AllTopics`) — a drift trap; DLQ topics are outside the versioned contract. |
 
