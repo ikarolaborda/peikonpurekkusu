@@ -41,6 +41,11 @@ http:
           - "X-User-Id"
           - "X-User-Roles"
           - "X-Session-Id"
+          # Authentication strength for step-up decisions. Listing them here is
+          # what makes them trustworthy: Traefik overwrites these from /verify's
+          # response, so a client-supplied value is always discarded.
+          - "X-Auth-Amr"
+          - "X-Auth-Time"
 
 tls:
   options:

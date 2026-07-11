@@ -108,23 +108,64 @@ next piece of work.
 
 ---
 
-## Backlog — known, unfixed, ranked
+## Backlog
 
-These are real and deliberately deferred: each is a feature, not a surgical fix,
-and rushing them into a working stack trades one class of defect for another.
+### Closed (2026-07-11)
+
+**B1 — MFA is now enforced, not advisory.** Previously login minted full auth
+cookies *before* the MFA challenge and `amr`/`auth_time` never left user-service,
+so no downstream service *could* gate on them: a password alone moved money.
+
+The naive fix — reject a half-authenticated session inside `verify()` — is wrong,
+and testing it first is what saved the design: `/auth/*` bypasses ForwardAuth (it
+*is* the authenticator), but `AuthGuard` calls the **same** `verify()`. Rejecting
+there would also reject `/auth/mfa/verify`, locking the user out of the very step
+that unlocks them.
+
+So the check is split. A password-only session for an enrolled user is marked
+`mfaPending`; the ForwardAuth `/verify` **endpoint** refuses it (no protected route
+is reachable), while `verify()` itself stays permissive so MFA-verify and logout
+still work. Refresh reuses the same session id, so token rotation cannot launder a
+pending session — only proof of the second factor clears it. `/verify` now also
+forwards `X-Auth-Amr` / `X-Auth-Time` (listed in Traefik's `authResponseHeaders`,
+so Traefik overwrites them and a client cannot forge them), and payment-service
+demands a *recent* second factor at or above `STEPUP_AMOUNT_LIMIT` — failing closed
+when those headers are missing or junk. The SPA gained the MFA entry step it never
+had; without it, enrolling a user would now lock them out.
+
+**B2 — `requires_action` no longer wedges.** `POST /payments/{id}/resume` re-drives
+a parked payment once the caller proves a fresh second factor, and
+`ExpireStaleRequiresAction` fails it if the challenge is never completed.
+
+**B4 — an open circuit no longer reads as a decline.** `gobreaker.ErrOpenState`
+was not wrapped as `ErrUnavailable`, so it fell to the generic branch: while the
+processor was *down*, the customer was told their card was *refused*. Unreachable
+is now retryable (same idempotent gateway reference), bounded by
+`ExpireStuckSubmissions`, and backs off instead of hot-looping.
+
+**B9 — idempotency locks get a 2-minute lease** with an atomic compare-and-swap
+reclaim, so a request that dies mid-flight no longer pins its key to 409 for 24 h.
+
+*Verified:* unit tests for the step-up matrix; 22/22 healthy; smoke 18/18. Live
+against the running stack: a large payment is refused `step_up_required` while an
+ordinary one still succeeds; an MFA-enrolled user's password-only session gets 401
+on `/users/me`, `/accounts` and `/transactions`, and after submitting the correct
+code the same session gets 200.
+
+### Still open, ranked
 
 | # | Severity | Issue |
 |---|---|---|
-| B1 | **High** | **MFA/step-up is advisory.** Login sets valid auth cookies *before* the MFA challenge, and `amr`/`auth_time` are never forwarded by ForwardAuth — so no downstream service *can* gate on them. A password alone is currently sufficient to move money. Fix: withhold the access cookie until MFA completes, forward `X-Auth-Amr`/`X-Auth-Time`, gate high-risk operations on freshness. |
-| B2 | **High** | **`requires_action` payments wedge permanently.** Fraud step-up parks the saga in a status no sweeper scans and no endpoint resumes. No funds are held at that point, so nothing is stranded — but the payment never resolves. Fix: a resume endpoint + expiry sweeper (pairs naturally with B1). |
 | B3 | Medium | **Ledger capture precedes PSP capture.** If the PSP capture fails after the ledger already moved the money, the failure is only logged — ledger and PSP diverge with no automated compensation. Fix: reversing entries on PSP capture failure + a settlement reconciliation job. |
-| B4 | Medium | **Breaker-open reads as a decline.** `ErrOpenState` maps to `gateway_declined`, so a brief PSP outage permanently *declines* the user's payment instead of retrying it. Fix: a retryable gateway-submission state. |
 | B5 | Medium | **No runtime contract validation.** Consumers read payload fields by string key with `?? ""` / `?? 0` fallbacks. Producer drift writes a zero-amount row into an append-only table that cannot be corrected in place. Fix: validate against `contracts/events/*.schema.json` on consume. |
 | B6 | Medium | **`kid` rotation is not implemented.** A single key is loaded and published; rotating it invalidates every outstanding token at once (fleet-wide logout) rather than overlapping old and new. |
 | B7 | Medium | **Fraud deep-analysis reads a lossy store.** `fraud_logs` is a `DropOldest` bounded channel, and the daily-volume threshold sums it — so the control weakens precisely under the burst it exists to detect. |
 | B8 | Low | **Header trust has no enforcement.** `X-User-Id` is unspoofable from outside (Traefik overwrites it), but any workload on the internal network can call a service directly and impersonate a user. Lateral-movement only. Fix: mTLS or a signed gateway assertion. |
-| B9 | Low | Idempotency records have no `recovery_point` (documented but absent) and no staleness check on `locked_at` — a crash mid-request pins that key to 409 for its full 24 h TTL. |
-| B10 | Low | Hygiene: the topic list is maintained by hand in three places (`contracts/events/topics.json`, `infra/kafka/create-topics.sh`, audit-service's `AllTopics`) — a drift trap; DLQ topics are outside the versioned contract. *(The inert `MOCK_PSP_DECLINE_RATE` knob and the uncapped `otel-collector` are now fixed.)* |
+| B10 | Low | Hygiene: the topic list is maintained by hand in three places (`contracts/events/topics.json`, `infra/kafka/create-topics.sh`, audit-service's `AllTopics`) — a drift trap; DLQ topics are outside the versioned contract. |
+
+MFA enrollment itself has no self-service UI yet (the flag is set directly in the
+database). The enforcement, challenge delivery and verification all work; what is
+missing is the "turn on MFA" screen.
 
 ## Build coupling — resolved
 
