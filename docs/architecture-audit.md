@@ -196,9 +196,43 @@ that never arrived". Two specific caveats rather than a reassuring summary:
   can sit collected-but-unbooked until the ledger retry lands (or a human looks).
   That is the deliberate trade: never refund money the network already took.
 
-A true settlement reconciliation against PSP reports is the proper safety net on
-top of both. It is **not** built: the mock PSP exposes no settlement report to
-reconcile against, and inventing one would be theatre.
+**Both residuals are now closed** (2026-07-11), and closing them exposed a defect
+in the closure itself — see below.
+
+*The crash window is no longer an assumption.* The mock PSP's capture handler
+returned `200` unconditionally, so it neither enforced nor proved idempotency —
+a double capture would have been invisible. It now records captures by reference:
+a repeat returns the original result and settles nothing more, counting attempts
+separately from settlements. Verified: three capture calls on one reference →
+`attempts: 3, settled: 1`. The retry the saga performs on resume is provably free.
+This makes the assumption explicit and testable against a stated contract; it is
+**not** proof that every real processor is idempotent, and that distinction is
+deliberate.
+
+*Settlement reconciliation now exists.* The mock publishes `GET /settlement` (what
+it actually collected, and the period the report covers), and payment-service
+compares our books against it every minute, in **both** directions because they
+mean opposite things:
+
+| drift | meaning |
+|---|---|
+| settled but not booked | the crash-window/liveness residual actually materialising — the processor has money we never recorded |
+| booked but not settled | the capture-ordering invariant is broken. This should now be impossible, so it is an alarm, not a warning |
+
+It is **detection only**. It never moves money: an automated "correction" to a
+discrepancy in a payment ledger is exactly what should require a human.
+
+*The defect the falsifier caught.* A reconciler that only ever prints "clean" is
+worse than none — it manufactures assurance. So it was tested by injecting real
+drift in each direction. The first run reported **55 violated invariants** on a
+perfectly healthy stack: the settlement registry is in-memory, so restarting the
+processor erased every prior capture while our books still held them. A settlement
+report covers a *period*; "absent from the report" means "never collected" only for
+payments the report actually claims to cover. The report now declares
+`report_since`, payments outside it are counted as out-of-scope rather than
+silently dropped, and the baseline is clean (0 false alarms, 55 correctly excluded).
+Injected drift then fired in both directions and cleared when reverted — while the
+genuinely orphaned capture kept being reported, because it is real.
 
 An audit of every compensation path backs the central claim: success is published
 in exactly one place (inside the post-ledger transaction), and no sweeper or
