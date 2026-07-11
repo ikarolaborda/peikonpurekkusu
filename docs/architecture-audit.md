@@ -79,9 +79,32 @@ staged and published after commit.
 The only state-mutating authenticated endpoint without `CsrfGuard`; every sibling
 route chains it.
 
-**Verification:** `go build` + `go test` (both Go services), `dotnet test`
-(fraud 15/15 including 5 new denylist regressions, transaction 5/5), `tsc --noEmit`
-(both Nest services). All green.
+A note on (6): the SSE push is now best-effort *after* a durable commit. That is
+the right trade — the notification row is committed to `notification-db` and the
+client can always re-read it from `GET /notifications`, so a dropped live push is
+recoverable, whereas a ghost notification for a rolled-back write is not.
+
+### Verified vs not verified
+
+Being precise about what the green checks actually prove:
+
+**Verified.** `go build` + `go test` (both Go services); `dotnet test` — fraud
+15/15 including 5 new denylist regressions, transaction 5/5; `tsc --noEmit` (both
+Nest services). The full stack then built and came up **22/22 healthy from the
+submodule layout**, and `make smoke` passed **18/18, exit 0** — including the
+wallet async-completion path through the reworked consumer, the payment saga, the
+idempotency replay, and the decline→hold-release compensation. So the fixes are
+exercised end-to-end against a running system, and the repo split is proven not to
+have broken the build or the topology.
+
+**Not verified.** The failure paths these fixes govern are argued from code, not
+yet exercised under fault injection. Specifically outstanding: a wallet-consumer
+crash between the effect and the idempotency mark (does redelivery converge with
+no duplicate ledger movement?); a forced DLQ-publish failure on each of the five
+consumers (does the offset really hold, and does replay then settle exactly
+once?); and the denylist step-up path against a genuinely unreachable Redis rather
+than a stubbed one. These want fault-injection integration tests — the natural
+next piece of work.
 
 ---
 
