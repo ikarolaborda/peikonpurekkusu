@@ -46,6 +46,12 @@ http:
           # response, so a client-supplied value is always discarded.
           - "X-Auth-Amr"
           - "X-Auth-Time"
+          # Signed proof the identity above came from ForwardAuth. Services verify
+          # it against user-service's JWKS and trust the claims, not the raw
+          # headers — closing internal header forgery (a peer on the internal net
+          # can set X-User-Id but cannot mint this without the private key).
+          # Overwritten from /verify's response, so a client value is discarded.
+          - "X-Gateway-Assertion"
 
 tls:
   options:

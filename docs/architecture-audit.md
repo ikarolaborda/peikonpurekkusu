@@ -422,11 +422,62 @@ not enforcement; the .NET/Nest consumers still name their single topic
 inline — a literal next to its consumer, not the fan-out drift trap this
 closed.
 
-### Still open, ranked
+**B8 — internal header trust is now enforced by a signed gateway assertion.**
+The falsifier came first and confirmed the audited defect exactly: from a
+container on `peikonpurekkusu_internal`, `curl -H 'X-User-Id: <victim>'
+http://account-service:8080/accounts` returned **200 with the victim's balance**,
+and `http://payment-service:8080/payments/instruments` returned the victim's card
+last4 — the only check was header *presence*, not *authenticity*. Because
+`X-Auth-Amr`/`X-Auth-Time` are also plain request headers, the B1 payment step-up
+gate was forgeable the same way. `X-User-Id` was unspoofable at the edge (Traefik
+overwrites it) but any internal workload could set it directly, because Traefik
+reaches services over the same flat network an attacker would sit on — a service
+could not tell "Traefik forwarded this after ForwardAuth" from "a peer forged it".
 
-| # | Severity | Issue |
-|---|---|---|
-| B8 | Low | **Header trust has no enforcement.** `X-User-Id` is unspoofable from outside (Traefik overwrites it), but any workload on the internal network can call a service directly and impersonate a user. Lateral-movement only. Fix: mTLS or a signed gateway assertion. |
+Severity, stated honestly: the precondition is code execution on the internal
+network (a compromised peer, malicious sidecar, or supply-chain in one container),
+so this is lateral-movement / defense-in-depth rather than remotely reachable —
+but *given* that precondition the impact is total user impersonation plus step-up
+bypass, so the fix is worth its cost.
+
+mTLS was rejected (heavy per-service PKI and rotation on this stack; it
+authenticates the *caller*, not the *user*, so `X-User-Id` would still be trusted
+transitively and break the moment one service calls another). A shared-secret HMAC
+was rejected outright: it makes every verifier a signer, so a single lateral
+compromise — the exact threat here — could mint any identity. The chosen fix keeps
+signing capability solely in user-service, reusing the B6 ES256 key ring.
+
+user-service's ForwardAuth `/verify` now also mints a short-TTL (60 s) ES256 JWT,
+`X-Gateway-Assertion`, over `{sub, roles, sid, amr, auth_time}` with a dedicated
+audience `peikon-internal` (distinct from the access-token audience, so the two
+tokens the same key signs can never be confused). It is listed in Traefik's
+`authResponseHeaders`, so Traefik overwrites any client-supplied value — exactly
+the mechanism that already protects `X-User-Id`. Each of the five identity
+consumers gained one fail-closed verification choke point that verifies the
+assertion against user-service's JWKS (ES256 pinned, audience + expiry checked,
+10 s skew, refetch on unknown `kid`), then **strips any inbound identity headers
+and rewrites them from the verified claims** before the handler runs — so handler
+code is unchanged but the values now provably originate from ForwardAuth. Go
+(account, payment) uses `golang-jwt/v5` + `keyfunc/v3`; .NET (transaction) uses
+`Microsoft.IdentityModel` `JsonWebKeySet` + `JsonWebTokenHandler`; Nest
+(notification, and user-service's own `/users/me`) uses `jose` (user-service
+verifies against its own key ring locally, no self-HTTP). Health endpoints, the
+minter path `/auth/*`, and `/.well-known` are deliberately excluded.
+
+*Verified live*: the identical forged direct call that returned 200 pre-fix now
+returns **401 on all five services**; a real login through Traefik still returns
+**200 on all five**; an access token replayed as the assertion is rejected 401 by
+the audience pin; health stays open. Smoke **18/18 exit 0**; user-service jest
+14/14; transaction dotnet 14/14.
+
+*Residual, stated plainly*: an attacker already executing code on the internal
+network who captures a *live* assertion can replay it for up to its 60 s TTL —
+a bearer-token property. They cannot mint new identities (no private key). Full
+anti-replay (per-request nonce + downstream state) was judged disproportionate for
+a defense-in-depth control whose precondition is already-having-internal-access;
+the short TTL is the bound. *Operational note*: editing
+`infra/traefik/dynamic.yml` requires `docker compose restart traefik` for a new
+`authResponseHeaders` entry to propagate — file-watch did not reload it here.
 
 MFA enrollment itself has no self-service UI yet (the flag is set directly in the
 database). The enforcement, challenge delivery and verification all work; what is

@@ -333,6 +333,7 @@ services:
       JWT_AUDIENCE: ${JWT_AUDIENCE}
       ACCESS_TOKEN_TTL: ${ACCESS_TOKEN_TTL}
       REFRESH_TOKEN_TTL: ${REFRESH_TOKEN_TTL}
+      GATEWAY_ASSERTION_TTL: ${GATEWAY_ASSERTION_TTL:-60}
       JWT_PRIVATE_KEY_PATH: /secrets/jwt-es256-private.pem
       JWT_RETIRED_KEYS_DIR: /secrets/retired-jwt-keys
       JWT_KID_PATH: /secrets/jwt-es256.kid
@@ -377,6 +378,8 @@ services:
       kafka:
         condition: service_healthy
       apicurio-registry:
+        condition: service_healthy
+      user-service:
         condition: service_healthy
     environment:
       ACCOUNT_DB_HOST: account-db
@@ -447,6 +450,8 @@ services:
       account-service:
         condition: service_healthy
       mock-psp:
+        condition: service_healthy
+      user-service:
         condition: service_healthy
     environment:
       PAYMENT_DB_HOST: payment-db
@@ -523,6 +528,8 @@ services:
         condition: service_healthy
       apicurio-registry:
         condition: service_healthy
+      user-service:
+        condition: service_healthy
     environment:
       TRANSACTION_DB_HOST: transaction-db
       TRANSACTION_DB_PORT: 5432
@@ -589,6 +596,8 @@ services:
       kafka:
         condition: service_healthy
       apicurio-registry:
+        condition: service_healthy
+      user-service:
         condition: service_healthy
     environment:
       NOTIFICATION_DB_HOST: notification-db
