@@ -396,12 +396,37 @@ the durable control). Residuals: multi-replica concurrency is reasoned from
 row-lock semantics, not live-tested (single replica today); day bucketing is
 event-time UTC, so late replays land on the day the capture occurred.
 
+**B10 — the topic inventory is single-sourced.** The falsifier came first
+and was honestly negative: set-diffing the three hand-kept lists found **no
+drift today** (18 domain topics + 11 DLQs, identical everywhere), so this
+closure is preventive. The failure mode it removes is real, though: a topic
+added to `create-topics.sh` but forgotten in audit-service's `AllTopics`
+became a **permanent audit blind spot with no error anywhere** — the firehose
+simply never subscribed.
+
+`contracts/events/consumers.json` now puts consumer groups, their consumed
+topics, and the DLQ derivation rule (`<group>.<topic>.dlq`; audit keeps its
+blanket firehose DLQ) inside the versioned contract. One generator —
+`scripts/gen-topics.py` — emits both `infra/kafka/create-topics.sh` and
+`contracts/gen/go/events/topics.go` (tagged `gen/go/v1.0.1`) from
+`topics.json` + `consumers.json`, cross-validating that every topic has a
+schema file and every consumed topic exists. audit-service dropped its hand
+list and imports `events.Topics` (the `AUDIT_TOPICS` override survives as a
+deliberate operational escape hatch). `make check-topics` fails on drift.
+
+*Verified*: regenerated `create-topics.sh` is set-identical to the hand
+version (29 topics); audit-service builds/tests green against `v1.0.1`;
+rebuilt live and a probe event landed in `audit_events`; smoke 18/18.
+Residuals: no CI exists in this repo, so `check-topics` runs on discipline,
+not enforcement; the .NET/Nest consumers still name their single topic
+inline — a literal next to its consumer, not the fan-out drift trap this
+closed.
+
 ### Still open, ranked
 
 | # | Severity | Issue |
 |---|---|---|
 | B8 | Low | **Header trust has no enforcement.** `X-User-Id` is unspoofable from outside (Traefik overwrites it), but any workload on the internal network can call a service directly and impersonate a user. Lateral-movement only. Fix: mTLS or a signed gateway assertion. |
-| B10 | Low | Hygiene: the topic list is maintained by hand in three places (`contracts/events/topics.json`, `infra/kafka/create-topics.sh`, audit-service's `AllTopics`) — a drift trap; DLQ topics are outside the versioned contract. |
 
 MFA enrollment itself has no self-service UI yet (the flag is set directly in the
 database). The enforcement, challenge delivery and verification all work; what is

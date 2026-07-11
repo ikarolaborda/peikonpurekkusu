@@ -2,7 +2,7 @@
 SHELL := /bin/bash
 COMPOSE := docker compose
 
-.PHONY: help up down reset logs ps smoke seed infra keys env build
+.PHONY: help up down reset logs ps smoke seed infra keys env build check-topics
 
 help: ## Show available targets
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-12s\033[0m %s\n", $$1, $$2}'
@@ -50,3 +50,6 @@ seed: ## Load demo data
 
 smoke: ## End-to-end smoke test (login → payment → notification)
 	@bash scripts/smoke.sh
+
+check-topics: ## Fail if generated topic lists drifted from contracts/events/*.json
+	@python3 scripts/gen-topics.py --check
