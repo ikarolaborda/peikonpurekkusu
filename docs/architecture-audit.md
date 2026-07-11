@@ -180,13 +180,31 @@ already took. It is retried instead (the ledger capture is idempotent on a
 deterministic request id, so it converges), and `AlertStalledLedgerCaptures`
 makes it loud rather than silent if it lingers.
 
-*Residual, stated honestly:* capturing externally first opens a window where the
+*Residual, stated honestly.* Capturing externally first opens a window where the
 processor has the money and our books do not yet say so. That is strictly better
 than the bug it replaces — it is non-terminal, visible, self-healing, and its
 worst case is "our own database is down", not "we credited a merchant for money
-that never arrived". A true settlement reconciliation against PSP reports is the
-proper safety net on top; it is **not** built, because the mock PSP exposes no
-settlement report to reconcile against, and inventing one would be theatre.
+that never arrived". Two specific caveats rather than a reassuring summary:
+
+- **Crash window.** If the process dies after the processor confirms the capture
+  but before `psp_captured` is committed, the resumed worker sees
+  `submitted_to_gateway` and captures again. That is safe *only because capturing
+  the same authorization reference twice is idempotent* — trivially true of the
+  mock, and the normal contract of real processors, but it is an assumption the
+  design leans on rather than something this repo proves.
+- **Liveness over money.** After `psp_captured`, nothing auto-compensates. Funds
+  can sit collected-but-unbooked until the ledger retry lands (or a human looks).
+  That is the deliberate trade: never refund money the network already took.
+
+A true settlement reconciliation against PSP reports is the proper safety net on
+top of both. It is **not** built: the mock PSP exposes no settlement report to
+reconcile against, and inventing one would be theatre.
+
+An audit of every compensation path backs the central claim: success is published
+in exactly one place (inside the post-ledger transaction), and no sweeper or
+handler can mark a `psp_captured` payment failed — which is what would otherwise
+emit `payment.failed.v1` and make account-service release a hold for money the
+processor already collected.
 
 *Verified live* with an injected capture rejection, through the real payment flow:
 **before** — `succeeded / captured`, customer debited 1577; **after** — `failed /
