@@ -217,7 +217,7 @@ mean opposite things:
 | drift | meaning |
 |---|---|
 | settled but not booked | the crash-window/liveness residual actually materialising — the processor has money we never recorded |
-| booked but not settled | the capture-ordering invariant is broken. This should now be impossible, so it is an alarm, not a warning |
+| booked but not settled | the capture-ordering assumption is violated — no supported failure path should produce this, so it is an alarm, not a warning |
 
 It is **detection only**. It never moves money: an automated "correction" to a
 discrepancy in a payment ledger is exactly what should require a human.
@@ -233,6 +233,18 @@ payments the report actually claims to cover. The report now declares
 silently dropped, and the baseline is clean (0 false alarms, 55 correctly excluded).
 Injected drift then fired in both directions and cleared when reverted — while the
 genuinely orphaned capture kept being reported, because it is real.
+
+*What the reconciler still cannot see, stated plainly.* The coverage window trades
+false alarms for a blind spot: drift among captures booked **before** the report
+begins is invisible to it. So an out-of-coverage count is not a footnote — it is its
+own status (`coverage_gap`), and a run with one is never reported as "clean". The
+result is exposed at `GET /health/reconciliation` (`clean` / `drift_detected` /
+`coverage_gap` / `unavailable`) rather than living only in a log line nobody reads.
+
+Precisely what is and is not proven: retry safety **against a processor that
+honours idempotent capture-by-reference** (verified against that contract, not
+against every real PSP); drift detection **only within the reported settlement
+window**; no automated remediation, by choice.
 
 An audit of every compensation path backs the central claim: success is published
 in exactly one place (inside the post-ledger transaction), and no sweeper or
